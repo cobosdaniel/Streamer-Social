@@ -23,11 +23,21 @@ resp.raise_for_status()
 
 data = resp.json()["data"]
 
+rewards_by_id = {reward["id"]: reward for reward in data}
 
-rewards_by_id = { reward["id"]: reward for reward in data }
+# List all the user's channel point redeems
+# 1. Hydrate! | ID: 123123
 print(f"Loaded {len(rewards_by_id)} rewards.")
 
-# To subscribe and track ONE particular channel point redemption.
+print(f"List of ALL Channel Point Redeems")
+for i, reward in enumerate(data, start=1):
+    title = reward["title"]
+    id = reward["id"]
+
+    print(f"{i}. {title} | ID: {id}")
+
+
+# To subscribe and track OALL channel point redemptions.
 def subscribe(session_id):
     url = "https://api.twitch.tv/helix/eventsub/subscriptions"
     payload = {
@@ -35,7 +45,6 @@ def subscribe(session_id):
         "version": "1",
         "condition": {
             "broadcaster_user_id": BROADCASTER_ID,
-            "reward_id": "794663b9-bb47-4af9-8ea6-a87c7a86b2d0"
         },
         "transport": {
             "method": "websocket",
@@ -54,7 +63,7 @@ def on_message(ws, message):
     elif data["metadata"]["message_type"] == "notification":
         event = data["payload"]["event"]
         username = event["user_name"]
-        
+
         reward_id = event["reward"]["id"]
         reward_title = rewards_by_id.get(reward_id, {}).get("title", "Unknown Reward")
         print(f"{reward_title} Redeemed by: {username}")
@@ -64,7 +73,6 @@ def on_error(ws, error):
 
 def on_close(ws, close_status_code, close_msg):
     print(f"Connection closed: {close_status_code} - {close_msg}")
-
 
 def on_open(ws):
     print("Connected to Twitch EventSub")
