@@ -37,7 +37,7 @@ def build_auth_url(scopes: list[str]) -> str:
 def twitch_login():
     # Minimal scopes for just “identify user” can be empty for some calls,
     # but commonly you’ll want at least user:read:email depending on your needs.
-    scopes = ["user:read:email"]
+    scopes = ["channel:read:redemptions"]
     return RedirectResponse(build_auth_url(scopes))
 
 @app.get("/auth/twitch/callback")
