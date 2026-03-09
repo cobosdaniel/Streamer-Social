@@ -1,0 +1,32 @@
+.App {
+  max-width: 900px;
+  margin: 40px auto;
+  padding: 0 16px;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.header {
+  list-style: none;
+  display: flex;
+  gap: 12px;
+  padding: 0;
+}
+
+.header li a {
+  text-decoration: none;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  color: #222;
+}
+
+.header li a:hover {
+  background: #f5f5f5;
+}
+
+.pageContent {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid #eee;
+  border-radius: 12px;
+}
