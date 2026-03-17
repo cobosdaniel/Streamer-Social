@@ -3,6 +3,7 @@ from fastapi.responses import RedirectResponse
 import os, secrets, time
 from dotenv import load_dotenv
 import httpx
+from db import upsert_streamer, save_tokens
 
 load_dotenv("user_oauth.env")
 
@@ -88,6 +89,24 @@ async def twitch_callback(code: str | None = None, state: str | None = None, err
         "client_id": v.get("client_id"),
         "login": v.get("login"),
     }
+
+    # Save to DB
+    upsert_streamer(
+        twitch_user_id=twitch_user_id,
+        login=v.get("login"),
+        client_id=v.get("client_id")
+    )
+
+    save_tokens(
+        twitch_user_id=twitch_user_id,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
+        scopes=v.get("scopes", []),
+
+    )
+
+    del pending_states[state]
 
     # Redirect back to your frontend (or show success)
     return {"ok": True, "broadcaster_id": twitch_user_id, "login": v.get("login")}

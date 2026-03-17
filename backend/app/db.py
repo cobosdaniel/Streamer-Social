@@ -1,6 +1,5 @@
 import os
 import mysql.connector
-from mysql.connector import errorcode
 from dotenv import load_dotenv
 
 load_dotenv("db.env")
@@ -14,30 +13,46 @@ def get_connection():
         database=os.getenv("DB_NAME"),
     )
 
-try:
+def upsert_streamer(twitch_user_id, login, client_id):
     conn = get_connection()
+    cursor = conn.cursor()
 
-    if conn.is_connected():
-        print ("Connected to MySQL")
+    query = """
+    INSERT INTO streamers (twitch_user_id, login, client_id)
+    VALUES (%s, %s, %s)
+    ON DUPLICATE KEY UPDATE
+        login = VALUES(login),
+        client_id = VALUES(client_id)
+    """
 
-        cursor = conn.cursor()
+    cursor.execute(query, (twitch_user_id, login, client_id))
+    conn.commit()
 
-        cursor.execute("show tables;")
+    cursor.close()
+    conn.close()
 
-        rows = cursor.fetchall()
+def save_tokens(twitch_user_id, access_token, refresh_token, expires_in, scopes):
+    conn = get_connection()
+    cursor = conn.cursor()
 
-        for row in rows:
-            print(row)
-        
-        cursor.close()
-        conn.close()
-        
-except mysql.connector.Error as err:
-    if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
-        print("Something is wrong with your credentials")
-    elif err.errno == errorcode.ER_BAD_DB_ERROR:
-        print("Database does not exist")
-    else:
-        print(err)
-else:
+    query = """
+    INSERT INTO tokens (twitch_user_id, access_token, refresh_token, expires_in, scopes)
+    VALUES (%s, %s, %s, %s, %s)
+    ON DUPLICATE KEY UPDATE
+        access_token = VALUES(access_token),
+        refresh_token = VALUES(refresh_token),
+        expires_in = VALUES(expires_in),
+        scopes = VALUES(scopes)
+    """
+
+    cursor.execute(query, (
+        twitch_user_id,
+        access_token,
+        refresh_token,
+        expires_in,
+        ",".join(scopes)
+    ))
+    conn.commit()
+
+    cursor.close()
     conn.close()
