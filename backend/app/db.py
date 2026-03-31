@@ -56,3 +56,37 @@ def save_tokens(twitch_user_id, access_token, refresh_token, expires_in, scopes)
 
     cursor.close()
     conn.close()
+
+def save_redemption(
+    event_id,
+    twitch_user_id,
+    user_login,
+    user_name,
+    reward_id,
+    reward_title,
+    redeemed_at,
+    status
+):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    query = """
+    INSERT IGNORE INTO redemptions
+    (event_id, twitch_user_id, user_login, user_name, reward_id, reward_title, redeemed_at, status)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    """
+
+    cursor.execute(query, (
+        event_id,
+        twitch_user_id,
+        user_login,
+        user_name,
+        reward_id,
+        reward_title,
+        redeemed_at,
+        status
+    ))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
