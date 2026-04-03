@@ -78,9 +78,9 @@ async def get_redemptions(user_id: str = Depends(get_current_user)):
     cursor = conn.cursor(dictionary=True)
 
     cursor.execute("""
-        SELECT 
+        SELECT
+            user_id,
             user_name,
-            user_login,
             reward_title,
             redeemed_at,
             status

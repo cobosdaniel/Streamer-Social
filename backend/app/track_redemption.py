@@ -82,7 +82,7 @@ def on_message(ws, message):
         event_id = data["payload"]["event"]["id"]
         broadcaster_id = event["broadcaster_user_id"]
 
-        user_login = event["user_login"]
+        user_id = event["user_id"]
         user_name = event["user_name"]
 
         reward_id = event["reward"]["id"]
@@ -98,7 +98,7 @@ def on_message(ws, message):
         save_redemption(
         event_id,
         broadcaster_id,
-        user_login,
+        user_id,
         user_name,
         reward_id,
         reward_title,
@@ -107,8 +107,8 @@ def on_message(ws, message):
         )
 
         notify_backend(broadcaster_id, {
+            "user_id": user_id,
             "user_name": user_name,
-            "user_login": user_login,
             "reward_title": reward_title,
             "redeemed_at": redeemed_at,
             "status": status

@@ -60,7 +60,7 @@ def save_tokens(twitch_user_id, access_token, refresh_token, expires_in, scopes)
 def save_redemption(
     event_id,
     twitch_user_id,
-    user_login,
+    user_id,
     user_name,
     reward_id,
     reward_title,
@@ -72,14 +72,14 @@ def save_redemption(
 
     query = """
     INSERT IGNORE INTO redemptions
-    (event_id, twitch_user_id, user_login, user_name, reward_id, reward_title, redeemed_at, status)
+    (event_id, twitch_user_id, user_id, user_name, reward_id, reward_title, redeemed_at, status)
     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
     """
 
     cursor.execute(query, (
         event_id,
         twitch_user_id,
-        user_login,
+        user_id,
         user_name,
         reward_id,
         reward_title,

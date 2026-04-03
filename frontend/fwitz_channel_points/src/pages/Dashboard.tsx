@@ -2,7 +2,6 @@ import { useEffect, useState, useRef } from "react";
 
 type Redemption = {
   user_name: string;
-  user_login: string;
   reward_title: string;
   redeemed_at: string;
   status: string;
@@ -122,10 +121,9 @@ export default function Dashboard() {
           <ul>
             {redemptions.map((r, index) => (
               <li key={index}>
-                <strong>{r.user_name}</strong> ({r.user_login})<br />
+                <strong>{r.user_name}</strong><br />
                 🎯 {r.reward_title}<br />
                 🕒 {new Date(r.redeemed_at).toLocaleString()}<br />
-                📌 {r.status}
               </li>
             ))}
           </ul>
