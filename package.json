@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "railway": "^2.0.17",
     "react-router-dom": "^7.13.1"
   }
 }
