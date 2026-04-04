@@ -58,7 +58,7 @@ manager = ConnectionManager()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[FRONTEND_BASE_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -237,8 +237,8 @@ async def twitch_callback(
         key="session_token",
         value=session_token,
         httponly=True,
-        secure=False,   # switch to True in production with HTTPS
-        samesite="lax",
+        secure=True,   # switch to True in production with HTTPS
+        samesite="none",
         max_age=24 * 3600,
     )
     return response
