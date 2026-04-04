@@ -1,4 +1,4 @@
-import React, { Component } from "react";
+import { useEffect, useState } from "react";
 import { Link, Routes, Route, Navigate } from "react-router-dom";
 
 import About from "./pages/About";
@@ -8,59 +8,59 @@ import Dashboard from "./pages/Dashboard";
 import ProtectedRoute from "./pages/ProtectedRoute";
 import TwitchLoginButton from "./pages/TwitchLoginButton";
 
-class App extends Component {
-  state = {
-    user: null,
-    loadingAuth: true,
-    menuOpen: false,
-  };
+type User = {
+  login: string;
+  broadcaster_id: string;
+};
 
-  componentDidMount() {
-    this.checkAuth();
-    document.addEventListener("click", this.handleOutsideClick);
-  }
+export default function App() {
+  const API_BASE = import.meta.env.VITE_API_URL;
 
-  componentWillUnmount() {
-    document.removeEventListener("click", this.handleOutsideClick);
-  }
+  const [user, setUser] = useState<User | null>(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  checkAuth = async () => {
+  useEffect(() => {
+    checkAuth();
+
+    document.addEventListener("click", handleOutsideClick);
+    return () => {
+      document.removeEventListener("click", handleOutsideClick);
+    };
+  }, []);
+
+  const checkAuth = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/me", {
+      const response = await fetch(`${API_BASE}/api/me`, {
         method: "GET",
         credentials: "include",
       });
 
       if (!response.ok) {
-        this.setState({ user: null, loadingAuth: false });
+        setUser(null);
+        setLoadingAuth(false);
         return;
       }
 
       const data = await response.json();
-      this.setState({
-        user: data,
-        loadingAuth: false,
-      });
+      setUser(data);
     } catch (error) {
       console.error("Auth check failed:", error);
-      this.setState({
-        user: null,
-        loadingAuth: false,
-      });
+      setUser(null);
+    } finally {
+      setLoadingAuth(false);
     }
   };
 
-  handleLogout = async () => {
+  const handleLogout = async () => {
     try {
-      await fetch("http://localhost:8000/auth/logout", {
+      await fetch(`${API_BASE}/auth/logout`, {
         method: "POST",
         credentials: "include",
       });
 
-      this.setState({
-        user: null,
-        menuOpen: false,
-      });
+      setUser(null);
+      setMenuOpen(false);
 
       window.location.href = "/";
     } catch (error) {
@@ -68,20 +68,16 @@ class App extends Component {
     }
   };
 
-  toggleMenu = (e) => {
+  const toggleMenu = (e: React.MouseEvent) => {
     e.stopPropagation();
-    this.setState((prev) => ({ menuOpen: !prev.menuOpen }));
+    setMenuOpen((prev) => !prev);
   };
 
-  handleOutsideClick = () => {
-    if (this.state.menuOpen) {
-      this.setState({ menuOpen: false });
-    }
+  const handleOutsideClick = () => {
+    setMenuOpen(false);
   };
 
-  renderProfileMenu() {
-    const { user, menuOpen } = this.state;
-
+  const renderProfileMenu = () => {
     if (!user) return null;
 
     return (
@@ -91,7 +87,7 @@ class App extends Component {
         onClick={(e) => e.stopPropagation()}
       >
         <button
-          onClick={this.toggleMenu}
+          onClick={toggleMenu}
           className="profile-trigger"
           style={{
             display: "flex",
@@ -163,13 +159,13 @@ class App extends Component {
                 color: "#fff",
                 textDecoration: "none",
               }}
-              onClick={() => this.setState({ menuOpen: false })}
+              onClick={() => setMenuOpen(false)}
             >
               Dashboard
             </Link>
 
             <button
-              onClick={this.handleLogout}
+              onClick={handleLogout}
               style={{
                 width: "100%",
                 textAlign: "left",
@@ -189,116 +185,88 @@ class App extends Component {
         )}
       </div>
     );
-  }
+  };
 
-  render() {
-    const { user, loadingAuth } = this.state;
+  return (
+    <div className="App">
+      <nav className="navbar">
+        <div className="brand">Fwitz Channel Points</div>
 
-    return (
-      <div className="App">
-        <nav className="navbar">
-          <div className="brand">Fwitz Channel Points</div>
+        <ul
+          className="header"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "18px",
+            listStyle: "none",
+            margin: 0,
+            padding: 0,
+          }}
+        >
+          <li><Link to="/">Home</Link></li>
+          <li><Link to="/about">About</Link></li>
+          <li><Link to="/contact">Contact</Link></li>
 
-          <ul
-            className="header"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "18px",
-              listStyle: "none",
-              margin: 0,
-              padding: 0,
-            }}
-          >
-            <li><Link to="/">Home</Link></li>
-            <li><Link to="/about">About</Link></li>
-            <li><Link to="/contact">Contact</Link></li>
+          {!loadingAuth && !user && (
+            <li>
+              <a href={`${API_BASE}/auth/twitch/login`}>Login</a>
+            </li>
+          )}
 
-            {!loadingAuth && !user && (
-              <li>
-                <a href="http://localhost:8000/auth/twitch/login">
-                  Login
-                </a>
-              </li>
-            )}
+          {!loadingAuth && user && (
+            <li><Link to="/dashboard">Dashboard</Link></li>
+          )}
 
-            {!loadingAuth && user && (
-              <li><Link to="/dashboard">Dashboard</Link></li>
-            )}
+          {!loadingAuth && user && (
+            <li style={{ listStyle: "none" }}>
+              {renderProfileMenu()}
+            </li>
+          )}
+        </ul>
+      </nav>
 
-            {!loadingAuth && user && (
-              <li style={{ listStyle: "none" }}>
-                {this.renderProfileMenu()}
-              </li>
-            )}
-          </ul>
-        </nav>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <>
+              <section className="hero">
+                <h1 className="hero-title">Fwitz Channel Points</h1>
+                <div className="hero-subtitle">Twitch Rewards Dashboard</div>
+                <p className="hero-text">
+                  Track redemptions, manage viewer interactions, and build a cleaner
+                  Twitch channel points experience with a modern dashboard.
+                </p>
 
-        <Routes>
-          <Route
-            path="/"
-            element={
-              <>
-                <section className="hero">
-                  <h1 className="hero-title">Fwitz Channel Points</h1>
-                  <div className="hero-subtitle">Twitch Rewards Dashboard</div>
-                  <p className="hero-text">
-                    Track redemptions, manage viewer interactions, and build a cleaner
-                    Twitch channel points experience with a modern dashboard.
-                  </p>
+                <div className="hero-actions">
+                  {!user ? (
+                    <TwitchLoginButton />
+                  ) : (
+                    <Link to="/dashboard" className="primary-btn">
+                      Go to Dashboard
+                    </Link>
+                  )}
+                </div>
+              </section>
+            </>
+          }
+        />
 
-                  <div className="hero-actions">
-                    {!user ? (
-                      <TwitchLoginButton />
-                    ) : (
-                      <Link to="/dashboard" className="primary-btn">Go to Dashboard</Link>
-                    )}
-                  </div>
+        <Route path="/about" element={<About />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/login" element={<Login />} />
 
-                  <div className="stats">
-                    <div className="stat">
-                      <h3>1.2K</h3>
-                      <p>Redemptions</p>
-                    </div>
-                    <div className="stat">
-                      <h3>312</h3>
-                      <p>Users</p>
-                    </div>
-                    <div className="stat">
-                      <h3>28</h3>
-                      <p>Rewards</p>
-                    </div>
-                    <div className="stat">
-                      <h3>99%</h3>
-                      <p>Uptime</p>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="section-card">
-                  <h2 className="section-title">What this app does</h2>
-                  <p className="section-text">
-                    Connect your Twitch account, store tokens securely, and redirect users
-                    into a dashboard where you can view redemption activity and streamer data.
-                  </p>
-                </section>
-              </>
-            }
-          />
-          <Route path="/about" element={<About />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/dashboard" element={
+        <Route
+          path="/dashboard"
+          element={
             <ProtectedRoute>
-              <Dashboard/>
+              <Dashboard />
             </ProtectedRoute>
           }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </div>
-    );
-  }
-}
+        />
 
-export default App;
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </div>
+  );
+}
