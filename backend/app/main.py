@@ -21,7 +21,7 @@ TWITCH_CLIENT_ID = os.environ["TWITCH_CLIENT_ID"]
 TWITCH_CLIENT_SECRET = os.environ["TWITCH_CLIENT_SECRET"]
 TWITCH_REDIRECT_URI = os.environ["TWITCH_REDIRECT_URI"]
 
-FRONTEND_BASE_URL = "http://localhost:5173"
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL")
 
 pending_states = {}
 user_tokens = {}
