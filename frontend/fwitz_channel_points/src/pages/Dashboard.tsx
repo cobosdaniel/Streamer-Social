@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 
+const API_BASE = import.meta.env.VITE_API_URL;
+
 type Redemption = {
   user_name: string;
   reward_title: string;
@@ -24,7 +26,7 @@ export default function Dashboard() {
   useEffect(() => {
     async function fetchDashboard() {
       try {
-        const response = await fetch("http://localhost:8000/api/dashboard", {
+        const response = await fetch(`${API_BASE}/api/dashboard`, {
           method: "GET",
           credentials: "include",
         });
@@ -36,7 +38,7 @@ export default function Dashboard() {
           throw new Error("Failed to load dashboard.");
         }
 
-        const redemptionsRes = await fetch("http://localhost:8000/api/redemptions", {
+        const redemptionsRes = await fetch(`${API_BASE}/api/redemptions`, {
           credentials: "include",
         });
         const redemptionsData = await redemptionsRes.json();
@@ -59,7 +61,7 @@ export default function Dashboard() {
     if (wsRef.current) return;
 
     const ws = new WebSocket(
-      `ws://localhost:8000/ws?user_id=${dashboardData.broadcaster_id}`
+      `${API_BASE.replace("https", "wss")}/ws?user_id=${dashboardData.broadcaster_id}`
     );
 
     wsRef.current = ws;

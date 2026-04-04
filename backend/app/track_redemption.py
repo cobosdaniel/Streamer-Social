@@ -3,10 +3,11 @@ import websocket
 import requests
 from db import get_connection, save_redemption
 
+
 def notify_backend(broadcaster_id, data):
     try:
         requests.post(
-            "http://localhost:8000/internal/redemption",
+            "https://streamer-social-production.up.railway.app/internal/redemption",
             json={
                 "broadcaster_id": broadcaster_id,
                 "data": data
