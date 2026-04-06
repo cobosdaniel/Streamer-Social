@@ -6,3 +6,4 @@ httpx
 websocket-client
 flask
 requests
+websockets
