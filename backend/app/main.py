@@ -56,7 +56,7 @@ class ConnectionManager:
             try:
                 await connection.send_json(data)
             except:
-                self.active_connections[user_id].remove[connection]
+                self.active_connections[user_id].remove(connection)
 
 manager = ConnectionManager()
 
