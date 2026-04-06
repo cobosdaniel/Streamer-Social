@@ -64,6 +64,8 @@ export default function Dashboard() {
       `${API_BASE.replace("https", "wss")}/ws?user_id=${dashboardData.broadcaster_id}`
     );
 
+    console.log("WS URL:", `${API_BASE.replace("https", "wss")}/ws?user_id=${dashboardData.broadcaster_id}`);
+
     wsRef.current = ws;
 
     ws.onopen = () => {

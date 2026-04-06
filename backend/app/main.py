@@ -9,6 +9,9 @@ import secrets
 import time
 from dotenv import load_dotenv
 import httpx
+from tracker_manager import start_tracker
+from track_redemption import run_tracker_for_streamer
+
 
 from db import upsert_streamer, save_tokens
 
@@ -228,6 +231,15 @@ async def twitch_callback(
         scopes=scopes,
     )
 
+    streamer = {
+        "twitch_user_id": twitch_user_id,
+        "access_token": access_token,
+        "client_id": client_id,
+        "login": login
+    }
+
+    start_tracker(streamer)
+
     del pending_states[state]
 
     session_token = secrets.token_urlsafe(32)
@@ -289,3 +301,25 @@ async def push_redemption(payload: dict):
     print("SENDING TO:", broadcaster_id)
 
     return {"ok": True}
+
+@app.on_event("startup")
+def startup_event():
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT 
+            s.twitch_user_id,
+            s.client_id,
+            t.access_token
+        FROM streamers s
+        JOIN tokens t ON s.twitch_user_id = t.twitch_user_id
+    """)
+
+    streamers = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+
+    for s in streamers:
+        start_tracker(s)

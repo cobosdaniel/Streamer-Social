@@ -1,7 +1,7 @@
 import json
 import websocket
 import requests
-from db import get_connection, save_redemption
+from db import save_redemption
 
 
 def notify_backend(broadcaster_id, data):
@@ -15,25 +15,6 @@ def notify_backend(broadcaster_id, data):
         )
     except Exception as e:
         print("Notify failed:", e)
-
-def get_streamers():
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-
-    cursor.execute("""
-        SELECT 
-            s.twitch_user_id,
-            s.client_id,
-            t.access_token
-        FROM streamers s
-        JOIN tokens t ON s.twitch_user_id = t.twitch_user_id
-    """)
-
-    data = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-    return data
 
 
 def subscribe(session_id, broadcaster_id, access_token, client_id):
@@ -61,68 +42,68 @@ def subscribe(session_id, broadcaster_id, access_token, client_id):
     print("Subscription:", res.status_code, res.text)
 
 
-def on_message(ws, message):
-    data = json.loads(message)
+# 🚀 THIS IS THE NEW ENTRY POINT
+def run_tracker_for_streamer(streamer):
+    broadcaster_id = streamer["twitch_user_id"]
+    access_token = streamer["access_token"]
+    client_id = streamer["client_id"]
 
-    if data["metadata"]["message_type"] == "session_welcome":
-        session_id = data["payload"]["session"]["id"]
+    def on_message(ws, message):
+        data = json.loads(message)
 
-        streamers = get_streamers()
+        if data["metadata"]["message_type"] == "session_welcome":
+            session_id = data["payload"]["session"]["id"]
 
-        for s in streamers:
+            print(f"Subscribing for {broadcaster_id}")
+
             subscribe(
                 session_id,
-                s["twitch_user_id"],
-                s["access_token"],
-                s["client_id"]
+                broadcaster_id,
+                access_token,
+                client_id
             )
 
-    elif data["metadata"]["message_type"] == "notification":
-        event = data["payload"]["event"]
+        elif data["metadata"]["message_type"] == "notification":
+            event = data["payload"]["event"]
 
-        event_id = data["payload"]["event"]["id"]
-        broadcaster_id = event["broadcaster_user_id"]
+            event_id = event["id"]
+            user_id = event["user_id"]
+            user_name = event["user_name"]
 
-        user_id = event["user_id"]
-        user_name = event["user_name"]
+            reward_id = event["reward"]["id"]
+            reward_title = event["reward"]["title"]
 
-        reward_id = event["reward"]["id"]
-        reward_title = event["reward"]["title"]
-        
-        redeemed_at = event["redeemed_at"]
-        status = event.get("status", "unknown")
+            redeemed_at = event["redeemed_at"]
+            status = event.get("status", "unknown")
 
+            print(f"{reward_title} redeemed by {user_name}")
 
+            save_redemption(
+                event_id,
+                broadcaster_id,
+                user_id,
+                user_name,
+                reward_id,
+                reward_title,
+                redeemed_at,
+                status
+            )
 
-        print(f"{reward_title} redeemed by {user_name}")
+            notify_backend(broadcaster_id, {
+                "user_id": user_id,
+                "user_name": user_name,
+                "reward_title": reward_title,
+                "redeemed_at": redeemed_at,
+                "status": status
+            })
 
-        save_redemption(
-        event_id,
-        broadcaster_id,
-        user_id,
-        user_name,
-        reward_id,
-        reward_title,
-        redeemed_at,
-        status
-        )
+    def on_open(ws):
+        print(f"Connected for streamer {broadcaster_id}")
 
-        notify_backend(broadcaster_id, {
-            "user_id": user_id,
-            "user_name": user_name,
-            "reward_title": reward_title,
-            "redeemed_at": redeemed_at,
-            "status": status
-        })
+    ws = websocket.WebSocketApp(
+        "wss://eventsub.wss.twitch.tv/ws",
+        on_message=on_message,
+        on_open=on_open
+    )
 
-def on_open(ws):
-    print("Connected to Twitch EventSub")
-
-
-ws = websocket.WebSocketApp(
-    "wss://eventsub.wss.twitch.tv/ws",
-    on_message=on_message,
-    on_open=on_open
-)
-
-ws.run_forever()
+    ws.run_forever()
