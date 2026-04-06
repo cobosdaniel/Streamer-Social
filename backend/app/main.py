@@ -48,11 +48,15 @@ class ConnectionManager:
             self.active_connections[user_id].remove(websocket)
 
     async def send_to_user(self, user_id: str, data: dict):
+        user_id = str(user_id)
         if user_id not in self.active_connections:
             return
 
-        for connection in self.active_connections[user_id]:
-            await connection.send_json(data)
+        for connection in self.active_connections[user_id][:]:
+            try:
+                await connection.send_json(data)
+            except:
+                self.active_connections[user_id].remove[connection]
 
 manager = ConnectionManager()
 
@@ -262,7 +266,8 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(None)):
     if not user_id:
         await websocket.close()
         return
-
+    
+    user_id = str(user_id)
     await manager.connect(websocket, user_id)
     print("WS CONNECTED FOR USER:", user_id)
 
@@ -275,10 +280,12 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(None)):
 
 @app.post("/internal/redemption")
 async def push_redemption(payload: dict):
-    broadcaster_id = payload["broadcaster_id"]
+    broadcaster_id = str(payload["broadcaster_id"])
     data = payload["data"]
 
     await manager.send_to_user(broadcaster_id, data)
 
-    print("SENDING TO WS:", broadcaster_id, data)
+    print("ACTIVE CONNECTIONS:", manager.active_connections)
+    print("SENDING TO:", broadcaster_id)
+
     return {"ok": True}
