@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 import httpx
 from tracker_manager import start_tracker
 from track_redemption import run_tracker_for_streamer
-
+from datetime import datetime, timedelta
 
 from db import upsert_streamer, save_tokens
 
@@ -94,7 +94,7 @@ async def get_redemptions(user_id: str = Depends(get_current_user)):
         FROM redemptions
         WHERE twitch_user_id = %s
         ORDER BY redeemed_at DESC
-        LIMIT 25
+        LIMIT 50
     """, (user_id,))
 
     rows = cursor.fetchall()
@@ -103,6 +103,108 @@ async def get_redemptions(user_id: str = Depends(get_current_user)):
     conn.close()
 
     return rows
+
+
+@app.get("/api/leaderboard")
+async def get_leaderboard(
+    reward_title: str,
+    user_id: str = Depends(get_current_user)
+):
+    """Return top viewers ranked by number of redemptions for a given reward."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT
+            user_name,
+            COUNT(*) AS count
+        FROM redemptions
+        WHERE twitch_user_id = %s
+          AND reward_title = %s
+        GROUP BY user_name
+        ORDER BY count DESC
+        LIMIT 20
+    """, (user_id, reward_title))
+
+    rows = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+
+    return rows
+
+
+@app.get("/api/streaks")
+async def get_streaks(
+    reward_title: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Return viewer watch streaks for a daily check-in reward.
+    A streak is the number of consecutive calendar days (up to today)
+    the viewer has redeemed the reward.
+    """
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    # Fetch all redemptions for this reward, one row per (user, date)
+    cursor.execute("""
+        SELECT
+            user_name,
+            DATE(redeemed_at) AS day
+        FROM redemptions
+        WHERE twitch_user_id = %s
+          AND reward_title = %s
+        GROUP BY user_name, DATE(redeemed_at)
+        ORDER BY user_name, day DESC
+    """, (user_id, reward_title))
+
+    rows = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+
+    # Group dates per user and compute streaks
+    from collections import defaultdict
+
+    user_days: dict[str, list] = defaultdict(list)
+    for row in rows:
+        user_days[row["user_name"]].append(row["day"])
+
+    today = datetime.utcnow().date()
+    result = []
+
+    for user_name, days in user_days.items():
+        # days are already sorted DESC from the query
+        sorted_days = sorted(set(days), reverse=True)
+
+        streak = 0
+        expected = today
+
+        # Allow grace: if last check-in was yesterday, streak is still live
+        if sorted_days and sorted_days[0] < today - timedelta(days=1):
+            # Streak is broken — still show their last run
+            pass
+
+        for day in sorted_days:
+            if day == expected or day == expected - timedelta(days=1):
+                streak += 1
+                expected = day - timedelta(days=1)
+            else:
+                break
+
+        last_checkin = sorted_days[0].isoformat() if sorted_days else None
+
+        result.append({
+            "user_name": user_name,
+            "streak": streak,
+            "last_checkin": last_checkin,
+        })
+
+    # Sort by streak descending
+    result.sort(key=lambda x: x["streak"], reverse=True)
+
+    return result[:20]
 
 
 def build_auth_url(scopes: list[str]) -> str:
@@ -253,7 +355,7 @@ async def twitch_callback(
         key="session_token",
         value=session_token,
         httponly=True,
-        secure=True,   # switch to True in production with HTTPS
+        secure=True,
         samesite="none",
         max_age=24 * 3600,
     )
