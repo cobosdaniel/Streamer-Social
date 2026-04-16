@@ -31,18 +31,16 @@ type StreakEntry = {
 
 type ScheduleDay = {
   day:  string;
-  time: string; // "" means no time set
+  time: string;
 };
 
 type StreamStatus = {
-  live:          boolean;
-  session_id?:   number;
-  started_at?:   string;
-  is_scheduled?: boolean;
+  live:           boolean;
+  session_id?:    number;
+  started_at?:    string;
+  is_scheduled?:  boolean;
   scheduled_day?: string | null;
 };
-
-// ── Small helpers ─────────────────────────────────────────────────────────────
 
 function LiveBadge() {
   return (
@@ -87,51 +85,50 @@ function SelectRow({
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 export default function Dashboard() {
   const wsRef = useRef<WebSocket | null>(null);
 
   const [dashboardData, setDashboardData] = useState({
     login: "", broadcaster_id: "", client_id: "", scopes: [] as string[],
   });
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState("");
 
-  const [redemptions,    setRedemptions]    = useState<Redemption[]>([]);
-  const [rewardTitles,   setRewardTitles]   = useState<string[]>([]);
-  const [streamStatus,   setStreamStatus]   = useState<StreamStatus>({ live: false });
+  const [redemptions,  setRedemptions]  = useState<Redemption[]>([]);
+  const [rewardTitles, setRewardTitles] = useState<string[]>([]);
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>({ live: false });
 
-  // Leaderboard
-  const [lbReward,  setLbReward]  = useState("");
+  const [lbReward,    setLbReward]    = useState("");
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [lbLoading, setLbLoading] = useState(false);
+  const [lbLoading,   setLbLoading]   = useState(false);
 
-  // Streaks
   const [streakReward,  setStreakReward]  = useState("");
   const [streaks,       setStreaks]       = useState<StreakEntry[]>([]);
   const [streakLoading, setStreakLoading] = useState(false);
 
-  // Schedule editor
-  const [schedule,        setSchedule]        = useState<ScheduleDay[]>([]);
-  const [scheduleLoading, setScheduleLoading] = useState(false);
-  const [scheduleSaved,   setScheduleSaved]   = useState(false);
+  const [schedule,        setSchedule]        = useState<ScheduleDay[]>(DAYS.map((d) => ({ day: d, time: "" })));
+  const [selectedDays,    setSelectedDays]     = useState<Set<string>>(new Set());
+  const [scheduleLoading, setScheduleLoading]  = useState(false);
+  const [scheduleSaved,   setScheduleSaved]    = useState(false);
+  // Track whether the streak-schedule endpoint exists on this deployment
+  const [scheduleSupported, setScheduleSupported] = useState(true);
 
   // ── Initial fetch ───────────────────────────────────────────────────────────
   useEffect(() => {
     async function init() {
       try {
-        const [dashRes, redRes, schedRes] = await Promise.all([
-          fetch(`${API_BASE}/api/dashboard`,        { credentials: "include" }),
-          fetch(`${API_BASE}/api/redemptions`,      { credentials: "include" }),
-          fetch(`${API_BASE}/api/streak-schedule`,  { credentials: "include" }),
+        // Dashboard and redemptions are required — if these fail we show an error
+        const [dashRes, redRes] = await Promise.all([
+          fetch(`${API_BASE}/api/dashboard`,   { credentials: "include" }),
+          fetch(`${API_BASE}/api/redemptions`, { credentials: "include" }),
         ]);
 
-        if (!dashRes.ok) throw new Error(dashRes.status === 401 ? "You are not logged in." : "Failed to load dashboard.");
+        if (!dashRes.ok) {
+          throw new Error(dashRes.status === 401 ? "You are not logged in." : "Failed to load dashboard.");
+        }
 
-        const dashData  = await dashRes.json();
-        const redData: Redemption[] = await redRes.json();
-        const schedData = await schedRes.json();
+        const dashData           = await dashRes.json();
+        const redData: Redemption[] = redRes.ok ? await redRes.json() : [];
 
         setDashboardData(dashData);
         setRedemptions(redData.slice(0, MAX_STORED));
@@ -140,10 +137,24 @@ export default function Dashboard() {
         setRewardTitles(titles);
         if (titles.length > 0) { setLbReward(titles[0]); setStreakReward(titles[0]); }
 
-        // Merge saved schedule with all days so every day is shown in the UI
-        const saved: Record<string, string> = {};
-        for (const s of schedData.scheduled_days ?? []) saved[s.day] = s.time ?? "";
-        setSchedule(DAYS.map((d) => ({ day: d, time: saved[d] ?? "" })));
+        // Schedule fetch is optional — if Railway hasn't deployed new main.py yet,
+        // we just hide the schedule section rather than crashing the whole page.
+        try {
+          const schedRes = await fetch(`${API_BASE}/api/streak-schedule`, { credentials: "include" });
+          if (schedRes.ok) {
+            const schedData = await schedRes.json();
+            const saved: Record<string, string> = {};
+            for (const s of schedData.scheduled_days ?? []) saved[s.day] = s.time ?? "";
+            setSchedule(DAYS.map((d) => ({ day: d, time: saved[d] ?? "" })));
+            setSelectedDays(new Set(Object.keys(saved)));
+          } else {
+            // 404 means backend not yet updated — disable section silently
+            setScheduleSupported(false);
+          }
+        } catch {
+          setScheduleSupported(false);
+        }
+
       } catch (err: any) {
         setError(err.message || "Something went wrong.");
       } finally {
@@ -201,7 +212,6 @@ export default function Dashboard() {
 
       } else if (msg.type === "stream_offline") {
         setStreamStatus({ live: false });
-        // Refresh streaks now the session is closed
         if (streakReward) {
           fetch(`${API_BASE}/api/streaks?reward_title=${encodeURIComponent(streakReward)}`, { credentials: "include" })
             .then((r) => r.json()).then(setStreaks).catch(console.error);
@@ -212,55 +222,7 @@ export default function Dashboard() {
     return () => ws.close();
   }, [dashboardData.broadcaster_id]);
 
-  // ── Schedule save ───────────────────────────────────────────────────────────
-  async function saveSchedule() {
-    setScheduleLoading(true);
-    setScheduleSaved(false);
-    try {
-      const selected = schedule.filter((d) => {
-        // A day is "selected" if it has an enabled flag — we track this via a separate set
-        return selectedDays.has(d.day);
-      });
-      await fetch(`${API_BASE}/api/streak-schedule`, {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scheduled_days: selected.map((d) => ({ day: d.day, time: d.time || undefined })) }),
-      });
-      setScheduleSaved(true);
-      setTimeout(() => setScheduleSaved(false), 2500);
-    } catch (e) { console.error(e); }
-    finally { setScheduleLoading(false); }
-  }
-
-  // Track which days are toggled on
-  const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
-
-  // Sync selectedDays from fetched schedule on load
-  useEffect(() => {
-    if (schedule.length === 0) return;
-    // selectedDays should reflect days that have a non-empty entry saved
-    // We initialise them as empty — they'll be set after schedule loads
-  }, []);
-
-  // On schedule load, mark days that were previously saved as selected
-  const [scheduleInitialized, setScheduleInitialized] = useState(false);
-  useEffect(() => {
-    if (scheduleInitialized || schedule.length === 0) return;
-    // If a day has any time or was in the saved list (time could be ""), we need to know
-    // We do this by checking what the server returned before we merged with DAYS
-    // Instead: mark day selected if its time field came from server (non-default)
-    // Since we can't easily diff, we'll let the user select manually — but pre-select
-    // days that have a saved time to give a hint.
-    // Actually, let's just keep it simple: fetch schedule again and mark selected.
-    fetch(`${API_BASE}/api/streak-schedule`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => {
-        const saved = new Set<string>((data.scheduled_days ?? []).map((s: any) => s.day));
-        setSelectedDays(saved);
-        setScheduleInitialized(true);
-      });
-  }, [schedule]);
-
+  // ── Schedule helpers ────────────────────────────────────────────────────────
   function toggleDay(day: string) {
     setSelectedDays((prev) => {
       const next = new Set(prev);
@@ -273,9 +235,31 @@ export default function Dashboard() {
     setSchedule((prev) => prev.map((d) => d.day === day ? { ...d, time } : d));
   }
 
+  async function saveSchedule() {
+    setScheduleLoading(true);
+    setScheduleSaved(false);
+    try {
+      const selected = schedule
+        .filter((d) => selectedDays.has(d.day))
+        .map((d) => ({ day: d.day, ...(d.time ? { time: d.time } : {}) }));
+
+      await fetch(`${API_BASE}/api/streak-schedule`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduled_days: selected }),
+      });
+      setScheduleSaved(true);
+      setTimeout(() => setScheduleSaved(false), 2500);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setScheduleLoading(false);
+    }
+  }
+
   // ── Early returns ───────────────────────────────────────────────────────────
   if (loading) return <main style={{ padding: "40px 20px" }}><p>Loading dashboard...</p></main>;
-  if (error)   return (
+  if (error) return (
     <main style={{ padding: "40px 20px 60px" }}>
       <section className="section-card">
         <h2 className="section-title">Dashboard Error</h2>
@@ -287,11 +271,9 @@ export default function Dashboard() {
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <main style={{ padding: "40px 20px 60px" }}>
-      <p style={{ color: "red" }}>v2 loaded</p>
-      <style>{`
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-      `}</style>
+      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }`}</style>
 
+      {/* Hero */}
       <section className="hero" style={{ minHeight: "auto", paddingTop: "40px", paddingBottom: "20px" }}>
         <h1 className="hero-title">Streamer Dashboard</h1>
         <div style={{ display: "flex", alignItems: "center", gap: "14px", marginTop: "10px" }}>
@@ -301,7 +283,9 @@ export default function Dashboard() {
         {streamStatus.live && streamStatus.started_at && (
           <p style={{ fontSize: "13px", color: "#cbbce4", marginTop: "6px" }}>
             Stream started {new Date(streamStatus.started_at).toLocaleTimeString()}
-            {streamStatus.scheduled_day ? ` · ${streamStatus.scheduled_day} scheduled stream` : " · bonus stream"}
+            {streamStatus.scheduled_day
+              ? ` · ${streamStatus.scheduled_day} scheduled stream`
+              : " · bonus stream"}
           </p>
         )}
       </section>
@@ -419,75 +403,75 @@ export default function Dashboard() {
         </section>
       </div>
 
-      {/* Stream Schedule */}
-      <section className="section-card" style={{ maxWidth: "1100px", margin: "24px auto 0" }}>
-        <h2 className="section-title">Stream Schedule</h2>
-        <p style={{ color: "#cbbce4", fontSize: "14px", marginBottom: "20px", marginTop: 0 }}>
-          Select your regular stream days. Viewers won't lose streaks for missing bonus streams on unscheduled days.
-          Setting a time creates a ±2 hour window — streams starting outside it are treated as bonus streams.
-        </p>
+      {/* Stream Schedule — hidden if backend not yet updated */}
+      {scheduleSupported && (
+        <section className="section-card" style={{ maxWidth: "1100px", margin: "24px auto 0" }}>
+          <h2 className="section-title">Stream Schedule</h2>
+          <p style={{ color: "#cbbce4", fontSize: "14px", marginBottom: "20px", marginTop: 0 }}>
+            Select your regular stream days. Viewers won't lose streaks for missing bonus streams on unscheduled days.
+            Setting a time creates a ±2 hour window — streams starting outside it are treated as bonus streams.
+          </p>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "10px", marginBottom: "20px" }}>
-          {DAYS.map((day) => {
-            const active = selectedDays.has(day);
-            return (
-              <button
-                key={day}
-                onClick={() => toggleDay(day)}
-                style={{
-                  padding: "10px 6px", borderRadius: "12px", cursor: "pointer",
-                  fontWeight: 700, fontSize: "13px", border: "1px solid",
-                  borderColor: active ? "#8b7bff" : "rgba(255,255,255,0.12)",
-                  background: active ? "rgba(139,123,255,0.18)" : "rgba(255,255,255,0.04)",
-                  color: active ? "#c5bcff" : "#a090c0",
-                  transition: "all 0.15s",
-                }}
-              >
-                {day}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Time inputs for selected days */}
-        {DAYS.filter((d) => selectedDays.has(d)).length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
-            {DAYS.filter((d) => selectedDays.has(d)).map((day) => {
-              const entry = schedule.find((s) => s.day === day);
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "10px", marginBottom: "20px" }}>
+            {DAYS.map((day) => {
+              const active = selectedDays.has(day);
               return (
-                <div key={day} style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-                  <span style={{ width: "36px", fontWeight: 700, fontSize: "14px", color: "#c5bcff" }}>{day}</span>
-                  <input
-                    type="time"
-                    value={entry?.time ?? ""}
-                    onChange={(e) => updateTime(day, e.target.value)}
-                    placeholder="optional"
-                    style={{
-                      background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)",
-                      color: "#f4ecff", borderRadius: "8px", padding: "6px 10px", fontSize: "14px",
-                    }}
-                  />
-                  <span style={{ fontSize: "12px", color: "#a090c0" }}>optional start time</span>
-                </div>
+                <button
+                  key={day}
+                  onClick={() => toggleDay(day)}
+                  style={{
+                    padding: "10px 6px", borderRadius: "12px", cursor: "pointer",
+                    fontWeight: 700, fontSize: "13px", border: "1px solid",
+                    borderColor: active ? "#8b7bff" : "rgba(255,255,255,0.12)",
+                    background: active ? "rgba(139,123,255,0.18)" : "rgba(255,255,255,0.04)",
+                    color: active ? "#c5bcff" : "#a090c0",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {day}
+                </button>
               );
             })}
           </div>
-        )}
 
-        <button
-          onClick={saveSchedule}
-          disabled={scheduleLoading}
-          style={{
-            padding: "10px 24px", borderRadius: "12px", cursor: "pointer",
-            background: scheduleSaved ? "rgba(80,200,120,0.2)" : "rgba(139,123,255,0.25)",
-            border: `1px solid ${scheduleSaved ? "#50c878" : "#8b7bff"}`,
-            color: scheduleSaved ? "#50c878" : "#c5bcff",
-            fontWeight: 700, fontSize: "14px", transition: "all 0.2s",
-          }}
-        >
-          {scheduleLoading ? "Saving..." : scheduleSaved ? "Saved!" : "Save Schedule"}
-        </button>
-      </section>
+          {DAYS.filter((d) => selectedDays.has(d)).length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
+              {DAYS.filter((d) => selectedDays.has(d)).map((day) => {
+                const entry = schedule.find((s) => s.day === day);
+                return (
+                  <div key={day} style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                    <span style={{ width: "36px", fontWeight: 700, fontSize: "14px", color: "#c5bcff" }}>{day}</span>
+                    <input
+                      type="time"
+                      value={entry?.time ?? ""}
+                      onChange={(e) => updateTime(day, e.target.value)}
+                      style={{
+                        background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)",
+                        color: "#f4ecff", borderRadius: "8px", padding: "6px 10px", fontSize: "14px",
+                      }}
+                    />
+                    <span style={{ fontSize: "12px", color: "#a090c0" }}>optional start time</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <button
+            onClick={saveSchedule}
+            disabled={scheduleLoading}
+            style={{
+              padding: "10px 24px", borderRadius: "12px", cursor: "pointer",
+              background: scheduleSaved ? "rgba(80,200,120,0.2)" : "rgba(139,123,255,0.25)",
+              border: `1px solid ${scheduleSaved ? "#50c878" : "#8b7bff"}`,
+              color: scheduleSaved ? "#50c878" : "#c5bcff",
+              fontWeight: 700, fontSize: "14px", transition: "all 0.2s",
+            }}
+          >
+            {scheduleLoading ? "Saving..." : scheduleSaved ? "Saved!" : "Save Schedule"}
+          </button>
+        </section>
+      )}
     </main>
   );
 }
