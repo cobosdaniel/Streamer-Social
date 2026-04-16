@@ -287,6 +287,7 @@ export default function Dashboard() {
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <main style={{ padding: "40px 20px 60px" }}>
+      <p style={{ color: "red" }}>v2 loaded</p>
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
       `}</style>
