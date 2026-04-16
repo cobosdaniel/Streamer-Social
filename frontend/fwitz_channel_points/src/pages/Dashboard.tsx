@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -64,22 +65,84 @@ function RewardDropdown({ value, options, onChange }: {
   onChange: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (btnRef.current && !btnRef.current.contains(e.target as Node)) {
+        // Check if click is inside the portal menu
+        const menu = document.getElementById("reward-dropdown-portal");
+        if (menu && menu.contains(e.target as Node)) return;
+        setOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
+  function handleOpen() {
+    if (!btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    setMenuPos({
+      top:   rect.bottom + window.scrollY + 4,
+      left:  rect.right + window.scrollX,
+      width: Math.max(rect.width, 220),
+    });
+    setOpen((p) => !p);
+  }
+
   const display = value || "Select reward";
 
+  const menu = open ? (
+    <div
+      id="reward-dropdown-portal"
+      style={{
+        position: "absolute",
+        top:      menuPos.top,
+        left:     menuPos.left,
+        transform: "translateX(-100%)",
+        minWidth: menuPos.width,
+        maxWidth: "280px",
+        background: "#1a1530",
+        border: "1px solid rgba(255,255,255,0.15)",
+        borderRadius: "8px",
+        zIndex: 99999,
+        overflow: "hidden",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+      }}
+    >
+      {options.length === 0 ? (
+        <div style={{ padding: "8px 12px", fontSize: "12px", color: "#a090c0" }}>No rewards yet</div>
+      ) : (
+        options.map((opt) => (
+          <button
+            key={opt}
+            onClick={() => { onChange(opt); setOpen(false); }}
+            style={{
+              display: "block", width: "100%", textAlign: "left",
+              padding: "7px 12px", fontSize: "12px", cursor: "pointer",
+              background: opt === value ? "rgba(139,123,255,0.25)" : "transparent",
+              color: opt === value ? "#c5bcff" : "#d4c8f0",
+              border: "none", borderBottom: "1px solid rgba(255,255,255,0.05)",
+            }}
+          >
+            {opt}
+          </button>
+        ))
+      )}
+    </div>
+  ) : null;
+
+  // Portal: append menu directly to document.body so no parent stacking context clips it
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   return (
-    <div ref={ref} style={{ position: "relative" }}>
+    <>
       <button
-        onClick={() => setOpen((p) => !p)}
+        ref={btnRef}
+        onClick={handleOpen}
         style={{
           display: "flex", alignItems: "center", gap: "6px",
           background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)",
@@ -92,37 +155,8 @@ function RewardDropdown({ value, options, onChange }: {
         </span>
         <span style={{ fontSize: "9px", opacity: 0.6, flexShrink: 0 }}>▼</span>
       </button>
-
-      {open && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 4px)", right: 0,
-          minWidth: "200px", maxWidth: "260px",
-          background: "#1a1530", border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius: "8px", zIndex: 9999, overflow: "hidden",
-          boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-        }}>
-          {options.length === 0 ? (
-            <div style={{ padding: "8px 12px", fontSize: "12px", color: "#a090c0" }}>No rewards yet</div>
-          ) : (
-            options.map((opt) => (
-              <button
-                key={opt}
-                onClick={() => { onChange(opt); setOpen(false); }}
-                style={{
-                  display: "block", width: "100%", textAlign: "left",
-                  padding: "7px 12px", fontSize: "12px", cursor: "pointer",
-                  background: opt === value ? "rgba(139,123,255,0.2)" : "transparent",
-                  color: opt === value ? "#c5bcff" : "#d4c8f0",
-                  border: "none", borderBottom: "1px solid rgba(255,255,255,0.05)",
-                }}
-              >
-                {opt}
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
+      {mounted && open && createPortal(menu, document.body)}
+    </>
   );
 }
 
@@ -332,10 +366,10 @@ export default function Dashboard() {
       </div>
 
       {/* Top row — Leaderboard + Streaks */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px", overflow: "visible" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
 
         {/* Leaderboard */}
-        <section className="section-card" style={{ margin: 0, padding: "16px 18px", overflow: "visible" }}>
+        <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
             <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Leaderboard</h2>
             <RewardDropdown value={lbReward} options={rewardTitles} onChange={setLbReward} />
@@ -367,7 +401,7 @@ export default function Dashboard() {
         </section>
 
         {/* Watch Streaks */}
-        <section className="section-card" style={{ margin: 0, padding: "16px 18px", overflow: "visible" }}>
+        <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
             <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Watch Streaks</h2>
             <RewardDropdown value={streakReward} options={rewardTitles} onChange={setStreakReward} />
