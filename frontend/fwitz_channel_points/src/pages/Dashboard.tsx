@@ -23,10 +23,10 @@ type LeaderboardEntry = {
 };
 
 type StreakEntry = {
-  user_name:            string;
-  streak:               number;
-  last_checkin_session: string;
-  last_scheduled_day:   string | null;
+  user_name:      string;
+  streak:         number;
+  longest_streak: number;
+  updated_at:     string | null;
 };
 
 type ScheduleDay = {
@@ -98,7 +98,7 @@ function RewardDropdown({ value, options, onChange }: {
           position: "absolute", top: "calc(100% + 4px)", right: 0,
           minWidth: "200px", maxWidth: "260px",
           background: "#1a1530", border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius: "8px", zIndex: 100, overflow: "hidden",
+          borderRadius: "8px", zIndex: 9999, overflow: "hidden",
           boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
         }}>
           {options.length === 0 ? (
@@ -332,10 +332,10 @@ export default function Dashboard() {
       </div>
 
       {/* Top row — Leaderboard + Streaks */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px", overflow: "visible" }}>
 
         {/* Leaderboard */}
-        <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
+        <section className="section-card" style={{ margin: 0, padding: "16px 18px", overflow: "visible" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
             <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Leaderboard</h2>
             <RewardDropdown value={lbReward} options={rewardTitles} onChange={setLbReward} />
@@ -367,7 +367,7 @@ export default function Dashboard() {
         </section>
 
         {/* Watch Streaks */}
-        <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
+        <section className="section-card" style={{ margin: 0, padding: "16px 18px", overflow: "visible" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
             <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Watch Streaks</h2>
             <RewardDropdown value={streakReward} options={rewardTitles} onChange={setStreakReward} />
@@ -394,7 +394,7 @@ export default function Dashboard() {
                       {entry.streak}s
                     </span>
                     <span style={{ fontSize: "11px", color: "#a090c0" }}>
-                      {entry.last_scheduled_day ?? "bonus"}
+                      best: {entry.longest_streak}
                     </span>
                   </li>
                 );
