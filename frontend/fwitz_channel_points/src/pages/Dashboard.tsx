@@ -58,6 +58,74 @@ function LiveBadge() {
   );
 }
 
+function RewardDropdown({ value, options, onChange }: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const display = value || "Select reward";
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((p) => !p)}
+        style={{
+          display: "flex", alignItems: "center", gap: "6px",
+          background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)",
+          color: "#f4ecff", borderRadius: "6px", padding: "3px 8px",
+          fontSize: "11px", cursor: "pointer", maxWidth: "180px",
+        }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "150px" }}>
+          {display}
+        </span>
+        <span style={{ fontSize: "9px", opacity: 0.6, flexShrink: 0 }}>▼</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", right: 0,
+          minWidth: "200px", maxWidth: "260px",
+          background: "#1a1530", border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: "8px", zIndex: 100, overflow: "hidden",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+        }}>
+          {options.length === 0 ? (
+            <div style={{ padding: "8px 12px", fontSize: "12px", color: "#a090c0" }}>No rewards yet</div>
+          ) : (
+            options.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => { onChange(opt); setOpen(false); }}
+                style={{
+                  display: "block", width: "100%", textAlign: "left",
+                  padding: "7px 12px", fontSize: "12px", cursor: "pointer",
+                  background: opt === value ? "rgba(139,123,255,0.2)" : "transparent",
+                  color: opt === value ? "#c5bcff" : "#d4c8f0",
+                  border: "none", borderBottom: "1px solid rgba(255,255,255,0.05)",
+                }}
+              >
+                {opt}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 export default function Dashboard() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -270,14 +338,7 @@ export default function Dashboard() {
         <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
             <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Leaderboard</h2>
-            <select
-              value={lbReward}
-              onChange={(e) => setLbReward(e.target.value)}
-              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#f4ecff", borderRadius: "6px", padding: "3px 7px", fontSize: "11px", cursor: "pointer", maxWidth: "160px" }}
-            >
-              {rewardTitles.length === 0 && <option value="">No rewards yet</option>}
-              {rewardTitles.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
+            <RewardDropdown value={lbReward} options={rewardTitles} onChange={setLbReward} />
           </div>
           {lbLoading ? (
             <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>Loading...</p>
@@ -309,14 +370,7 @@ export default function Dashboard() {
         <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
             <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Watch Streaks</h2>
-            <select
-              value={streakReward}
-              onChange={(e) => setStreakReward(e.target.value)}
-              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#f4ecff", borderRadius: "6px", padding: "3px 7px", fontSize: "11px", cursor: "pointer", maxWidth: "160px" }}
-            >
-              {rewardTitles.length === 0 && <option value="">No rewards yet</option>}
-              {rewardTitles.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
+            <RewardDropdown value={streakReward} options={rewardTitles} onChange={setStreakReward} />
           </div>
           {streakLoading ? (
             <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>Loading...</p>
