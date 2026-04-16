@@ -3,31 +3,34 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
-from db import get_connection, upsert_streamer, save_tokens, get_streak_schedule, save_streak_schedule
+from db import (
+    get_connection, upsert_streamer, save_tokens,
+    get_streak_schedule, save_streak_schedule,
+    get_viewer_streaks,
+)
 import os
 import secrets
 import time
 from dotenv import load_dotenv
 import httpx
 from tracker_manager import start_tracker
-from datetime import datetime, timedelta
 from typing import Optional
 
 load_dotenv("user_oauth.env")
 
 app = FastAPI()
 
-TWITCH_CLIENT_ID = os.environ["TWITCH_CLIENT_ID"]
+TWITCH_CLIENT_ID     = os.environ["TWITCH_CLIENT_ID"]
 TWITCH_CLIENT_SECRET = os.environ["TWITCH_CLIENT_SECRET"]
-TWITCH_REDIRECT_URI = os.environ["TWITCH_REDIRECT_URI"]
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL")
+TWITCH_REDIRECT_URI  = os.environ["TWITCH_REDIRECT_URI"]
+FRONTEND_BASE_URL    = os.getenv("FRONTEND_BASE_URL")
 
 pending_states = {}
-user_tokens = {}
-sessions = {}
+user_tokens    = {}
+sessions       = {}
 
-AUTH_URL = "https://id.twitch.tv/oauth2/authorize"
-TOKEN_URL = "https://id.twitch.tv/oauth2/token"
+AUTH_URL     = "https://id.twitch.tv/oauth2/authorize"
+TOKEN_URL    = "https://id.twitch.tv/oauth2/token"
 VALIDATE_URL = "https://id.twitch.tv/oauth2/validate"
 
 
@@ -74,11 +77,11 @@ def get_current_user(request: Request):
     return sessions[token]["twitch_user_id"]
 
 
-# ── Redemptions ───────────────────────────────────────────────────────────────
+# ── Redemptions ────────────────────────────────────────────────────────────────
 
 @app.get("/api/redemptions")
 async def get_redemptions(user_id: str = Depends(get_current_user)):
-    conn = get_connection()
+    conn   = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
         SELECT user_id, user_name, reward_title, redeemed_at, status
@@ -93,11 +96,11 @@ async def get_redemptions(user_id: str = Depends(get_current_user)):
     return rows
 
 
-# ── Leaderboard ───────────────────────────────────────────────────────────────
+# ── Leaderboard ────────────────────────────────────────────────────────────────
 
 @app.get("/api/leaderboard")
 async def get_leaderboard(reward_title: str, user_id: str = Depends(get_current_user)):
-    conn = get_connection()
+    conn   = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
         SELECT user_name, COUNT(*) AS count
@@ -113,10 +116,32 @@ async def get_leaderboard(reward_title: str, user_id: str = Depends(get_current_
     return rows
 
 
-# ── Streak Schedule ───────────────────────────────────────────────────────────
+# ── Streaks — fast cached read ─────────────────────────────────────────────────
+
+@app.get("/api/streaks")
+async def get_streaks(reward_title: str, user_id: str = Depends(get_current_user)):
+    """
+    Returns pre-computed streaks from viewer_streaks.
+    Streaks are settled incrementally in track_redemption.py when each
+    stream session closes — this endpoint is just a single SELECT.
+    """
+    rows = get_viewer_streaks(user_id, reward_title, limit=20)
+
+    return [
+        {
+            "user_name":      r["user_name"],
+            "streak":         r["current_streak"],
+            "longest_streak": r["longest_streak"],
+            "updated_at":     r["updated_at"].isoformat() if r["updated_at"] else None,
+        }
+        for r in rows
+    ]
+
+
+# ── Streak Schedule ────────────────────────────────────────────────────────────
 
 class ScheduleDay(BaseModel):
-    day: str
+    day:  str
     time: Optional[str] = None
 
 class StreakSchedulePayload(BaseModel):
@@ -137,85 +162,7 @@ async def update_schedule(
     return {"ok": True, "scheduled_days": days}
 
 
-# ── Streaks ───────────────────────────────────────────────────────────────────
-
-@app.get("/api/streaks")
-async def get_streaks(reward_title: str, user_id: str = Depends(get_current_user)):
-    """
-    Per-stream streak computation.
-
-    - Scheduled session missed (and ended) → streak resets to 0.
-    - Unscheduled session missed            → no penalty.
-    - Any session checked into              → streak +1.
-    - Live session not yet checked into     → not penalised yet.
-    """
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-
-    cursor.execute("""
-        SELECT id, started_at, ended_at, is_scheduled, scheduled_day
-        FROM stream_sessions
-        WHERE twitch_user_id = %s
-        ORDER BY started_at ASC
-    """, (user_id,))
-    sessions_list = cursor.fetchall()
-
-    if not sessions_list:
-        cursor.close()
-        conn.close()
-        return []
-
-    cursor.execute("""
-        SELECT user_name, redeemed_at
-        FROM redemptions
-        WHERE twitch_user_id = %s AND reward_title = %s
-        ORDER BY redeemed_at ASC
-    """, (user_id, reward_title))
-    redemptions = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-
-    from collections import defaultdict
-    user_redemption_times: dict[str, list] = defaultdict(list)
-    for r in redemptions:
-        user_redemption_times[r["user_name"]].append(r["redeemed_at"])
-
-    now = datetime.utcnow()
-    result = []
-
-    for viewer, viewer_times in user_redemption_times.items():
-        streak = 0
-        last_session_info = None
-
-        for sess in sessions_list:
-            sess_start = sess["started_at"]
-            sess_end   = sess["ended_at"] if sess["ended_at"] else now
-            is_live    = sess["ended_at"] is None
-
-            checked_in = any(sess_start <= rt <= sess_end for rt in viewer_times)
-
-            if checked_in:
-                streak += 1
-                last_session_info = sess
-            elif sess["is_scheduled"] and not is_live:
-                # Missed a finished scheduled session — reset
-                streak = 0
-            # Unscheduled miss or live session not yet checked in: no action
-
-        if streak > 0 and last_session_info:
-            result.append({
-                "user_name":           viewer,
-                "streak":              streak,
-                "last_checkin_session": last_session_info["started_at"].isoformat(),
-                "last_scheduled_day":  last_session_info.get("scheduled_day"),
-            })
-
-    result.sort(key=lambda x: x["streak"], reverse=True)
-    return result[:20]
-
-
-# ── Auth ──────────────────────────────────────────────────────────────────────
+# ── Auth ───────────────────────────────────────────────────────────────────────
 
 def build_auth_url(scopes: list[str]) -> str:
     state = secrets.token_urlsafe(32)
@@ -235,8 +182,7 @@ def root():
 
 @app.get("/auth/twitch/login")
 def twitch_login():
-    scopes = ["channel:read:redemptions"]
-    return RedirectResponse(build_auth_url(scopes))
+    return RedirectResponse(build_auth_url(["channel:read:redemptions"]))
 
 @app.post("/auth/logout")
 def logout(request: Request):
@@ -256,7 +202,7 @@ async def me(user_id: str = Depends(get_current_user)):
 
 @app.get("/auth/twitch/callback")
 async def twitch_callback(
-    code: str | None = None,
+    code:  str | None = None,
     state: str | None = None,
     error: str | None = None,
 ):
@@ -306,11 +252,8 @@ async def twitch_callback(
 
     upsert_streamer(twitch_user_id=twitch_user_id, login=login, client_id=client_id)
     save_tokens(
-        twitch_user_id=twitch_user_id,
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_in=expires_in,
-        scopes=scopes,
+        twitch_user_id=twitch_user_id, access_token=access_token,
+        refresh_token=refresh_token, expires_in=expires_in, scopes=scopes,
     )
 
     start_tracker({"twitch_user_id": twitch_user_id, "access_token": access_token,
@@ -340,7 +283,7 @@ async def dashboard(user_id: str = Depends(get_current_user)):
     }
 
 
-# ── WebSocket ─────────────────────────────────────────────────────────────────
+# ── WebSocket ──────────────────────────────────────────────────────────────────
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(None)):
@@ -358,27 +301,22 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(None)):
         print("WS DISCONNECTED FOR USER:", user_id)
 
 
-# ── Internal push from tracker ────────────────────────────────────────────────
+# ── Internal push from tracker ─────────────────────────────────────────────────
 
 @app.post("/internal/event")
 async def push_event(payload: dict):
-    """
-    Receives all events from track_redemption.py.
-    event_type: "redemption" | "stream_online" | "stream_offline"
-    """
     broadcaster_id = str(payload["broadcaster_id"])
     event_type     = payload["event_type"]
     data           = payload["data"]
-
     await manager.send_to_user(broadcaster_id, {"type": event_type, **data})
     return {"ok": True}
 
 
-# ── Startup ───────────────────────────────────────────────────────────────────
+# ── Startup ────────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
 def startup_event():
-    conn = get_connection()
+    conn   = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
         SELECT s.twitch_user_id, s.client_id, t.access_token
