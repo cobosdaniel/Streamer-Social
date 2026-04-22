@@ -115,18 +115,17 @@ def classify_session(broadcaster_id, started_at: datetime):
     schedule = get_streak_schedule(broadcaster_id)
     day_abbrev = DAY_ABBREVS[started_at.weekday()]
 
-    # No schedule configured = every day counts, but none are "required"
-    # unless you want every day to be required by default.
+    # No schedule configured at all = every day is required
     if not schedule:
         return {
             "scheduled_day": day_abbrev,
             "counts_toward_streak": True,
-            "required_day": False,
+            "required_day": True,
         }
 
     schedule_map = {s["day"]: s.get("time") for s in schedule}
 
-    # Non-scheduled day:
+    # Day is not part of configured schedule:
     # still reward attendance, but don't punish missing it
     if day_abbrev not in schedule_map:
         return {
@@ -137,7 +136,7 @@ def classify_session(broadcaster_id, started_at: datetime):
 
     scheduled_time_str = schedule_map[day_abbrev]
 
-    # Scheduled day with no time = whole day counts and is required
+    # Day is scheduled, no time restriction
     if not scheduled_time_str:
         return {
             "scheduled_day": day_abbrev,
@@ -152,8 +151,8 @@ def classify_session(broadcaster_id, started_at: datetime):
 
     return {
         "scheduled_day": day_abbrev,
-        "counts_toward_streak": True,   # still counts if they showed up
-        "required_day": within_window,  # only required if stream happened in the scheduled window
+        "counts_toward_streak": True,
+        "required_day": within_window,
     }
 
 
