@@ -113,24 +113,48 @@ DAY_ABBREVS = {
 
 def classify_session(broadcaster_id, started_at: datetime):
     schedule = get_streak_schedule(broadcaster_id)
-    if not schedule:
-        return None, False
+    day_abbrev = DAY_ABBREVS[started_at.weekday()]
 
-    day_abbrev   = DAY_ABBREVS[started_at.weekday()]
+    # No schedule configured = every day counts, but none are "required"
+    # unless you want every day to be required by default.
+    if not schedule:
+        return {
+            "scheduled_day": day_abbrev,
+            "counts_toward_streak": True,
+            "required_day": False,
+        }
+
     schedule_map = {s["day"]: s.get("time") for s in schedule}
 
+    # Non-scheduled day:
+    # still reward attendance, but don't punish missing it
     if day_abbrev not in schedule_map:
-        return day_abbrev, False
+        return {
+            "scheduled_day": day_abbrev,
+            "counts_toward_streak": True,
+            "required_day": False,
+        }
 
     scheduled_time_str = schedule_map[day_abbrev]
-    if not scheduled_time_str:
-        return day_abbrev, True
 
-    hour, minute  = map(int, scheduled_time_str.split(":"))
-    scheduled_dt  = started_at.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    delta         = abs((started_at - scheduled_dt).total_seconds())
-    is_scheduled  = delta <= 7200
-    return day_abbrev, is_scheduled
+    # Scheduled day with no time = whole day counts and is required
+    if not scheduled_time_str:
+        return {
+            "scheduled_day": day_abbrev,
+            "counts_toward_streak": True,
+            "required_day": True,
+        }
+
+    hour, minute = map(int, scheduled_time_str.split(":"))
+    scheduled_dt = started_at.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    delta = abs((started_at - scheduled_dt).total_seconds())
+    within_window = delta <= 7200
+
+    return {
+        "scheduled_day": day_abbrev,
+        "counts_toward_streak": True,   # still counts if they showed up
+        "required_day": within_window,  # only required if stream happened in the scheduled window
+    }
 
 
 # ── Main tracker ───────────────────────────────────────────────────────────────
@@ -188,21 +212,30 @@ def run_tracker_for_streamer(streamer):
 
             # ── Stream online ─────────────────────────────────────────────────
             elif sub_type == "stream.online":
-                started_at    = datetime.now(timezone.utc).replace(tzinfo=None)
-                scheduled_day, is_scheduled = classify_session(broadcaster_id, started_at)
+                started_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                session_meta = classify_session(broadcaster_id, started_at)
 
                 db_session_id = save_stream_session(
-                    broadcaster_id, started_at, scheduled_day, is_scheduled
+                    broadcaster_id=broadcaster_id,
+                    started_at=started_at,
+                    scheduled_day=session_meta["scheduled_day"],
+                    counts_toward_streak=session_meta["counts_toward_streak"],
+                    required_day=session_meta["required_day"],
                 )
 
-                print(f"Stream ONLINE for {broadcaster_id} "
-                      f"(scheduled={is_scheduled}, day={scheduled_day})")
+                print(
+                    f"Stream ONLINE for {broadcaster_id} "
+                    f"(counts_toward_streak={session_meta['counts_toward_streak']}, "
+                    f"required_day={session_meta['required_day']}, "
+                    f"day={session_meta['scheduled_day']})"
+                )
 
                 notify_backend(broadcaster_id, "stream_online", {
-                    "session_id":    db_session_id,
-                    "started_at":    started_at.isoformat(),
-                    "scheduled_day": scheduled_day,
-                    "is_scheduled":  is_scheduled,
+                    "session_id": db_session_id,
+                    "started_at": started_at.isoformat(),
+                    "scheduled_day": session_meta["scheduled_day"],
+                    "counts_toward_streak": session_meta["counts_toward_streak"],
+                    "required_day": session_meta["required_day"],
                 })
 
             # ── Stream offline ────────────────────────────────────────────────
@@ -213,8 +246,13 @@ def run_tracker_for_streamer(streamer):
                 closed_session = end_stream_session(broadcaster_id, ended_at)
 
                 if closed_session:
-                    print(f"Stream OFFLINE for {broadcaster_id} "
-                          f"— settling streaks for session {closed_session['id']}")
+                    print(
+                        f"Stream OFFLINE for {broadcaster_id} — settling streaks for "
+                        f"session {closed_session['id']} "
+                        f"(counts_toward_streak={closed_session.get('counts_toward_streak')}, "
+                        f"required_day={closed_session.get('required_day')}, "
+                        f"scheduled_day={closed_session.get('scheduled_day')})"
+                    )
                     try:
                         settle_streaks_for_session(closed_session)
                         print(f"Streaks settled for session {closed_session['id']}")
