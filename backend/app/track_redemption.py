@@ -215,11 +215,11 @@ def run_tracker_for_streamer(streamer):
                 session_meta = classify_session(broadcaster_id, started_at)
 
                 db_session_id = save_stream_session(
-                    broadcaster_id=broadcaster_id,
-                    started_at=started_at,
-                    scheduled_day=session_meta["scheduled_day"],
-                    counts_toward_streak=session_meta["counts_toward_streak"],
-                    required_day=session_meta["required_day"],
+                    broadcaster_id,
+                    started_at,
+                    session_meta["scheduled_day"],
+                    session_meta["counts_toward_streak"],
+                    session_meta["required_day"],
                 )
 
                 print(

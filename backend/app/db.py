@@ -65,15 +65,28 @@ def save_redemption(
 
 # ── Stream Sessions ────────────────────────────────────────────────────────────
 
-def save_stream_session(twitch_user_id, started_at, scheduled_day, is_scheduled):
-    """Open a new stream session. Returns the new session id."""
+def save_stream_session(twitch_user_id, started_at, scheduled_day, counts_toward_streak, required_day):
     conn = get_connection()
     cursor = conn.cursor()
+
     cursor.execute("""
-        INSERT INTO stream_sessions
-            (twitch_user_id, scheduled_day, is_scheduled, started_at)
-        VALUES (%s, %s, %s, %s)
-    """, (twitch_user_id, scheduled_day, is_scheduled, started_at))
+        INSERT INTO stream_sessions (
+            twitch_user_id,
+            started_at,
+            scheduled_day,
+            counts_toward_streak,
+            required_day,
+            ended_at
+        )
+        VALUES (%s, %s, %s, %s, %s, NULL)
+    """, (
+        twitch_user_id,
+        started_at,
+        scheduled_day,
+        counts_toward_streak,
+        required_day,
+    ))
+
     session_id = cursor.lastrowid
     conn.commit()
     cursor.close()
@@ -82,37 +95,43 @@ def save_stream_session(twitch_user_id, started_at, scheduled_day, is_scheduled)
 
 
 def end_stream_session(twitch_user_id, ended_at):
-    """
-    Close the most recent open session and return its full row
-    so the caller can immediately process streaks.
-    """
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
-    # Close it
+    cursor.execute("""
+        SELECT id
+        FROM stream_sessions
+        WHERE twitch_user_id = %s AND ended_at IS NULL
+        ORDER BY started_at DESC
+        LIMIT 1
+    """, (twitch_user_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        cursor.close()
+        conn.close()
+        return None
+
+    session_id = row["id"]
+
     cursor.execute("""
         UPDATE stream_sessions
         SET ended_at = %s
-        WHERE twitch_user_id = %s
-          AND ended_at IS NULL
-        ORDER BY started_at DESC
-        LIMIT 1
-    """, (ended_at, twitch_user_id))
+        WHERE id = %s
+    """, (ended_at, session_id))
     conn.commit()
 
-    # Fetch the row we just closed
     cursor.execute("""
-        SELECT * FROM stream_sessions
-        WHERE twitch_user_id = %s
-          AND ended_at = %s
-        ORDER BY started_at DESC
-        LIMIT 1
-    """, (twitch_user_id, ended_at))
-    row = cursor.fetchone()
+        SELECT id, twitch_user_id, started_at, ended_at,
+               scheduled_day, counts_toward_streak, required_day
+        FROM stream_sessions
+        WHERE id = %s
+    """, (session_id,))
+    closed_session = cursor.fetchone()
 
     cursor.close()
     conn.close()
-    return row
+    return closed_session
 
 
 def get_active_session(twitch_user_id):
@@ -136,65 +155,82 @@ def get_active_session(twitch_user_id):
 def settle_streaks_for_session(session):
     """
     Called once when a stream session closes.
-    For every viewer who redeemed the check-in reward during this session,
-    increment their streak. For scheduled sessions, reset streaks for anyone
-    who had a streak going but did NOT check in.
 
-    session: dict row from stream_sessions (must have ended_at set).
+    Rules:
+    - If counts_toward_streak is true, viewers who checked in increase their streak.
+    - If required_day is true, viewers with an active streak who missed reset to 0.
+    - If required_day is false, missing the stream does not reset streaks.
     """
-    session_id     = session["id"]
+    session_id = session["id"]
     twitch_user_id = session["twitch_user_id"]
-    is_scheduled   = session["is_scheduled"]
+    counts_toward_streak = bool(session.get("counts_toward_streak", 1))
+    required_day = bool(session.get("required_day", 1))
 
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
-    # Find all distinct reward_titles redeemed during this session
+    # Find all distinct reward titles redeemed during this session
     cursor.execute("""
-        SELECT DISTINCT reward_title FROM redemptions
-        WHERE session_id = %s AND twitch_user_id = %s
+        SELECT DISTINCT reward_title
+        FROM redemptions
+        WHERE session_id = %s
+          AND twitch_user_id = %s
     """, (session_id, twitch_user_id))
     reward_rows = cursor.fetchall()
 
     for rr in reward_rows:
         reward_title = rr["reward_title"]
 
-        # Viewers who checked in this session
+        # Viewers who checked in for this reward during this session
         cursor.execute("""
-            SELECT DISTINCT user_name FROM redemptions
+            SELECT DISTINCT user_name
+            FROM redemptions
             WHERE session_id = %s
               AND twitch_user_id = %s
               AND reward_title = %s
         """, (session_id, twitch_user_id, reward_title))
         checked_in = {r["user_name"] for r in cursor.fetchall()}
 
-        # Increment streak for viewers who checked in
-        for user_name in checked_in:
-            cursor.execute("""
-                INSERT INTO viewer_streaks
-                    (twitch_user_id, user_name, reward_title,
-                     current_streak, longest_streak, last_session_id)
-                VALUES (%s, %s, %s, 1, 1, %s)
-                ON DUPLICATE KEY UPDATE
-                    current_streak  = current_streak + 1,
-                    longest_streak  = GREATEST(longest_streak, current_streak + 1),
-                    last_session_id = VALUES(last_session_id)
-            """, (twitch_user_id, user_name, reward_title, session_id))
+        # Reward attendance on any counted session
+        if counts_toward_streak:
+            for user_name in checked_in:
+                cursor.execute("""
+                    INSERT INTO viewer_streaks (
+                        twitch_user_id,
+                        user_name,
+                        reward_title,
+                        current_streak,
+                        longest_streak,
+                        last_session_id
+                    )
+                    VALUES (%s, %s, %s, 1, 1, %s)
+                    ON DUPLICATE KEY UPDATE
+                        current_streak = current_streak + 1,
+                        longest_streak = GREATEST(longest_streak, current_streak + 1),
+                        last_session_id = VALUES(last_session_id)
+                """, (twitch_user_id, user_name, reward_title, session_id))
 
-        # For scheduled sessions only: reset streaks for viewers who had a
-        # streak but didn't check in this session
-        if is_scheduled:
-            cursor.execute("""
-                UPDATE viewer_streaks
-                SET current_streak = 0
-                WHERE twitch_user_id = %s
-                  AND reward_title = %s
-                  AND current_streak > 0
-                  AND user_name NOT IN ({})
-            """.format(",".join(["%s"] * len(checked_in)) if checked_in else "SELECT NULL"),
-                (twitch_user_id, reward_title, *checked_in) if checked_in
-                else (twitch_user_id, reward_title)
-            )
+        # Only penalize misses on required days
+        if required_day:
+            if checked_in:
+                placeholders = ",".join(["%s"] * len(checked_in))
+                params = (twitch_user_id, reward_title, *checked_in)
+                cursor.execute(f"""
+                    UPDATE viewer_streaks
+                    SET current_streak = 0
+                    WHERE twitch_user_id = %s
+                      AND reward_title = %s
+                      AND current_streak > 0
+                      AND user_name NOT IN ({placeholders})
+                """, params)
+            else:
+                cursor.execute("""
+                    UPDATE viewer_streaks
+                    SET current_streak = 0
+                    WHERE twitch_user_id = %s
+                      AND reward_title = %s
+                      AND current_streak > 0
+                """, (twitch_user_id, reward_title))
 
     conn.commit()
     cursor.close()
