@@ -84,9 +84,11 @@ function RewardDropdown({
       size="small"
       options={options}
       value={selectedReward}
-      onChange={(_, newValue) => onChange(newValue?.title ?? "")}
-      getOptionLabel={(option) => option.title}
-      isOptionEqualToValue={(option, value) => option.id === value.id}
+      onChange={(_: React.SyntheticEvent, newValue: Reward | null) =>
+        onChange(newValue?.title ?? "")
+      }
+      getOptionLabel={(option: Reward) => option.title}
+      isOptionEqualToValue={(option: Reward, value: Reward) => option.id === value.id}
       sx={{
         width: 240,
         "& .MuiInputBase-root": {
@@ -101,7 +103,7 @@ function RewardDropdown({
           color: "#c5bcff",
         },
       }}
-      renderInput={(params) => (
+      renderInput={(params: any) => (
         <TextField
           {...params}
           placeholder="Search rewards"
