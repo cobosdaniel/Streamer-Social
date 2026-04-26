@@ -137,6 +137,42 @@ async def get_streaks(reward_title: str, user_id: str = Depends(get_current_user
         for r in rows
     ]
 
+# ── Rewards ─────────────────────────────────────────────────
+@app.get("/api/rewards")
+async def get_rewards(user_id: str = Depends(get_current_user)):
+    user_data = user_tokens.get(user_id)
+
+    if not user_data:
+        raise HTTPException(status_code=404, detail="User data not found")
+
+    access_token = user_data["access_token"]
+    client_id = user_data["client_id"]
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        res = await client.get(
+            "https://api.twitch.tv/helix/channel_points/custom_rewards",
+            params={"broadcaster_id": user_id},
+            headers={
+                "Client-ID": client_id,
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+    if res.status_code != 200:
+        raise HTTPException(status_code=res.status_code, detail=res.text)
+
+    data = res.json().get("data", [])
+
+    return [
+        {
+            "id": r["id"],
+            "title": r["title"],
+            "cost": r.get("cost"),
+            "is_enabled": r.get("is_enabled"),
+        }
+        for r in data
+    ]
+
 
 # ── Streak Schedule ────────────────────────────────────────────────────────────
 

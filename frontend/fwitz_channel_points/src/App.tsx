@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, Routes, Route, Navigate } from "react-router-dom";
+import Autocomplete from "@mui/material/Autocomplete";
 
 import About from "./pages/About";
 import Contact from "./pages/Contact";

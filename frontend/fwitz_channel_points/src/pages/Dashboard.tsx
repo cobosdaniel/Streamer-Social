@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from "react";
-import { createPortal } from "react-dom";
+import Autocomplete from "@mui/material/Autocomplete";
+import TextField from "@mui/material/TextField";
+
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -16,6 +18,13 @@ type Redemption = {
   reward_title: string;
   redeemed_at:  string;
   status:       string;
+};
+
+type Reward = {
+  id: string;
+  title: string;
+  cost?: number;
+  is_enabled?: boolean;
 };
 
 type LeaderboardEntry = {
@@ -59,104 +68,46 @@ function LiveBadge() {
   );
 }
 
-function RewardDropdown({ value, options, onChange }: {
+function RewardDropdown({
+  value,
+  options,
+  onChange,
+}: {
   value: string;
-  options: string[];
+  options: Reward[];
   onChange: (v: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 0 });
-  const btnRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (btnRef.current && !btnRef.current.contains(e.target as Node)) {
-        // Check if click is inside the portal menu
-        const menu = document.getElementById("reward-dropdown-portal");
-        if (menu && menu.contains(e.target as Node)) return;
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  function handleOpen() {
-    if (!btnRef.current) return;
-    const rect = btnRef.current.getBoundingClientRect();
-    setMenuPos({
-      top:   rect.bottom + window.scrollY + 4,
-      left:  rect.right + window.scrollX,
-      width: Math.max(rect.width, 220),
-    });
-    setOpen((p) => !p);
-  }
-
-  const display = value || "Select reward";
-
-  const menu = open ? (
-    <div
-      id="reward-dropdown-portal"
-      style={{
-        position: "absolute",
-        top:      menuPos.top,
-        left:     menuPos.left,
-        transform: "translateX(-100%)",
-        minWidth: menuPos.width,
-        maxWidth: "280px",
-        background: "#1a1530",
-        border: "1px solid rgba(255,255,255,0.15)",
-        borderRadius: "8px",
-        zIndex: 99999,
-        overflow: "hidden",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
-      }}
-    >
-      {options.length === 0 ? (
-        <div style={{ padding: "8px 12px", fontSize: "12px", color: "#a090c0" }}>No rewards yet</div>
-      ) : (
-        options.map((opt) => (
-          <button
-            key={opt}
-            onClick={() => { onChange(opt); setOpen(false); }}
-            style={{
-              display: "block", width: "100%", textAlign: "left",
-              padding: "7px 12px", fontSize: "12px", cursor: "pointer",
-              background: opt === value ? "rgba(139,123,255,0.25)" : "transparent",
-              color: opt === value ? "#c5bcff" : "#d4c8f0",
-              border: "none", borderBottom: "1px solid rgba(255,255,255,0.05)",
-            }}
-          >
-            {opt}
-          </button>
-        ))
-      )}
-    </div>
-  ) : null;
-
-  // Portal: append menu directly to document.body so no parent stacking context clips it
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
+  const selectedReward = options.find((r) => r.title === value) ?? null;
 
   return (
-    <>
-      <button
-        ref={btnRef}
-        onClick={handleOpen}
-        style={{
-          display: "flex", alignItems: "center", gap: "6px",
-          background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)",
-          color: "#f4ecff", borderRadius: "6px", padding: "3px 8px",
-          fontSize: "11px", cursor: "pointer", maxWidth: "180px",
-        }}
-      >
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "150px" }}>
-          {display}
-        </span>
-        <span style={{ fontSize: "9px", opacity: 0.6, flexShrink: 0 }}>▼</span>
-      </button>
-      {mounted && open && createPortal(menu, document.body)}
-    </>
+    <Autocomplete
+      size="small"
+      options={options}
+      value={selectedReward}
+      onChange={(_, newValue) => onChange(newValue?.title ?? "")}
+      getOptionLabel={(option) => option.title}
+      isOptionEqualToValue={(option, value) => option.id === value.id}
+      sx={{
+        width: 240,
+        "& .MuiInputBase-root": {
+          color: "#f4ecff",
+          background: "rgba(255,255,255,0.06)",
+          fontSize: "12px",
+        },
+        "& .MuiOutlinedInput-notchedOutline": {
+          borderColor: "rgba(255,255,255,0.12)",
+        },
+        "& .MuiSvgIcon-root": {
+          color: "#c5bcff",
+        },
+      }}
+      renderInput={(params) => (
+        <TextField
+          {...params}
+          placeholder="Search rewards"
+        />
+      )}
+    />
   );
 }
 
@@ -171,7 +122,7 @@ export default function Dashboard() {
   const [error,   setError]   = useState("");
 
   const [redemptions,  setRedemptions]  = useState<Redemption[]>([]);
-  const [rewardTitles, setRewardTitles] = useState<string[]>([]);
+  const [rewards, setRewards] = useState<Reward[]>([]);
   const [streamStatus, setStreamStatus] = useState<StreamStatus>({ live: false });
 
   const [lbReward,    setLbReward]    = useState("");
@@ -194,9 +145,10 @@ export default function Dashboard() {
     async function init() {
       try {
         // Dashboard and redemptions are required — if these fail we show an error
-        const [dashRes, redRes] = await Promise.all([
-          fetch(`${API_BASE}/api/dashboard`,   { credentials: "include" }),
+        const [dashRes, redRes, rewardsRes] = await Promise.all([
+          fetch(`${API_BASE}/api/dashboard`, { credentials: "include" }),
           fetch(`${API_BASE}/api/redemptions`, { credentials: "include" }),
+          fetch(`${API_BASE}/api/rewards`, { credentials: "include" })
         ]);
 
         if (!dashRes.ok) {
@@ -209,9 +161,14 @@ export default function Dashboard() {
         setDashboardData(dashData);
         setRedemptions(redData.slice(0, MAX_STORED));
 
-        const titles = Array.from(new Set(redData.map((r) => r.reward_title)));
-        setRewardTitles(titles);
-        if (titles.length > 0) { setLbReward(titles[0]); setStreakReward(titles[0]); }
+        const rewardData: Reward[] = rewardsRes.ok ? await rewardsRes.json() : [];
+
+        setRewards(rewardData);
+
+        if (rewardData.length > 0) {
+          setLbReward(rewardData[0].title);
+          setStreakReward(rewardData[0].title);
+        }
 
         // Schedule fetch is optional — if Railway hasn't deployed new main.py yet,
         // we just hide the schedule section rather than crashing the whole page.
@@ -277,7 +234,11 @@ export default function Dashboard() {
           redeemed_at: msg.redeemed_at, status: msg.status,
         };
         setRedemptions((prev) => [r, ...prev].slice(0, MAX_STORED));
-        setRewardTitles((prev) => prev.includes(r.reward_title) ? prev : [...prev, r.reward_title]);
+        setRewards((prev) =>
+          prev.some((reward) => reward.title === r.reward_title)
+            ? prev
+            : [...prev, { id: r.reward_title, title: r.reward_title }]
+        );
 
       } else if (msg.type === "stream_online") {
         setStreamStatus({
@@ -372,7 +333,7 @@ export default function Dashboard() {
         <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
             <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Leaderboard</h2>
-            <RewardDropdown value={lbReward} options={rewardTitles} onChange={setLbReward} />
+            <RewardDropdown value={lbReward} options={rewards} onChange={setLbReward} />
           </div>
           {lbLoading ? (
             <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>Loading...</p>
@@ -404,7 +365,7 @@ export default function Dashboard() {
         <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
             <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Watch Streaks</h2>
-            <RewardDropdown value={streakReward} options={rewardTitles} onChange={setStreakReward} />
+            <RewardDropdown value={streakReward} options={rewards} onChange={setStreakReward} />
           </div>
           {streakLoading ? (
             <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>Loading...</p>
