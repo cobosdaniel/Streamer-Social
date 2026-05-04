@@ -138,6 +138,7 @@ async def get_streaks(reward_title: str, user_id: str = Depends(get_current_user
     ]
 
 # ── Rewards ─────────────────────────────────────────────────
+
 @app.get("/api/rewards")
 async def get_rewards(user_id: str = Depends(get_current_user)):
     user_data = user_tokens.get(user_id)
