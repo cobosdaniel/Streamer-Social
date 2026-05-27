@@ -24,6 +24,7 @@ TWITCH_CLIENT_ID     = os.environ["TWITCH_CLIENT_ID"]
 TWITCH_CLIENT_SECRET = os.environ["TWITCH_CLIENT_SECRET"]
 TWITCH_REDIRECT_URI  = os.environ["TWITCH_REDIRECT_URI"]
 FRONTEND_BASE_URL    = os.getenv("FRONTEND_BASE_URL")
+INTERNAL_API_KEY     = os.environ["INTERNAL_API_KEY"]
 
 pending_states = {}
 user_tokens    = {}
@@ -340,8 +341,13 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(None)):
 
 # ── Internal push from tracker ─────────────────────────────────────────────────
 
+def verify_internal_key(request: Request):
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer ") or auth[len("Bearer "):] != INTERNAL_API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
 @app.post("/internal/event")
-async def push_event(payload: dict):
+async def push_event(payload: dict, _: None = Depends(verify_internal_key)):
     broadcaster_id = str(payload["broadcaster_id"])
     event_type     = payload["event_type"]
     data           = payload["data"]

@@ -14,15 +14,19 @@ from db import (
 )
 
 
+_INTERNAL_URL = os.getenv("BACKEND_INTERNAL_URL", "https://streamer-social-production.up.railway.app")
+_INTERNAL_KEY = os.environ["INTERNAL_API_KEY"]
+
 def notify_backend(broadcaster_id, event_type, data):
     try:
         requests.post(
-            "https://streamer-social-production.up.railway.app/internal/event",
+            f"{_INTERNAL_URL}/internal/event",
             json={
                 "broadcaster_id": broadcaster_id,
                 "event_type":     event_type,
                 "data":           data,
-            }
+            },
+            headers={"Authorization": f"Bearer {_INTERNAL_KEY}"},
         )
     except Exception as e:
         print("Notify failed:", e)
