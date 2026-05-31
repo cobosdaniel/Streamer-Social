@@ -235,7 +235,7 @@ def run_tracker_for_streamer(streamer):
 
                 notify_backend(broadcaster_id, "stream_online", {
                     "session_id": db_session_id,
-                    "started_at": started_at.isoformat(),
+                    "started_at": started_at.isoformat() + "Z",
                     "scheduled_day": session_meta["scheduled_day"],
                     "counts_toward_streak": session_meta["counts_toward_streak"],
                     "required_day": session_meta["required_day"],

@@ -94,7 +94,10 @@ async def get_redemptions(user_id: str = Depends(get_current_user)):
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
-    return rows
+    return [
+        {**r, "redeemed_at": r["redeemed_at"].isoformat() + "Z" if r["redeemed_at"] else None}
+        for r in rows
+    ]
 
 
 # ── Leaderboard ────────────────────────────────────────────────────────────────
@@ -133,7 +136,7 @@ async def get_streaks(reward_title: str, user_id: str = Depends(get_current_user
             "user_name":      r["user_name"],
             "streak":         r["current_streak"],
             "longest_streak": r["longest_streak"],
-            "updated_at":     r["updated_at"].isoformat() if r["updated_at"] else None,
+            "updated_at":     r["updated_at"].isoformat() + "Z" if r["updated_at"] else None,
         }
         for r in rows
     ]
