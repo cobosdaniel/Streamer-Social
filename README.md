@@ -45,45 +45,6 @@ Channel_Points/
                 └── Dashboard.tsx
 ```
 
-## Environment Variables
-
-### Backend
-
-| Variable | Description |
-|---|---|
-| `DB_HOST` | MySQL host |
-| `DB_PORT` | MySQL port |
-| `DB_USER` | MySQL user |
-| `DB_PASSWORD` | MySQL password |
-| `DB_NAME` | MySQL database name |
-| `TWITCH_CLIENT_ID` | Twitch application client ID |
-| `TWITCH_CLIENT_SECRET` | Twitch application client secret |
-| `TWITCH_REDIRECT_URI` | OAuth callback URL |
-| `FRONTEND_BASE_URL` | Frontend URL for redirects |
-| `INTERNAL_API_KEY` | Shared secret between tracker and backend |
-
-### Frontend
-
-| Variable | Description |
-|---|---|
-| `VITE_API_URL` | Backend URL |
-
-## Running Locally
-
-**Backend**
-```bash
-cd backend/app
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-```
-
-**Frontend**
-```bash
-cd frontend/fwitz_channel_points
-npm install
-npm run dev
-```
-
 ## API Endpoints
 
 | Method | Endpoint | Description |
