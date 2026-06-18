@@ -27,6 +27,10 @@ from typing import Optional
 
 load_dotenv("user_oauth.env")
 
+for _var in ("TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_REDIRECT_URI",
+             "FRONTEND_BASE_URL", "INTERNAL_API_KEY"):
+    assert os.getenv(_var), f"Missing required environment variable: {_var}"
+
 app = FastAPI()
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
