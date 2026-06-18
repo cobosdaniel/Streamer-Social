@@ -328,10 +328,17 @@ def _ensure_streak_reward_column():
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        ALTER TABLE streak_schedules
-        ADD COLUMN IF NOT EXISTS reward_title VARCHAR(255) DEFAULT NULL
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME   = 'streak_schedules'
+          AND COLUMN_NAME  = 'reward_title'
     """)
-    conn.commit()
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("""
+            ALTER TABLE streak_schedules
+            ADD COLUMN reward_title VARCHAR(255) DEFAULT NULL
+        """)
+        conn.commit()
     cursor.close()
     conn.close()
 
