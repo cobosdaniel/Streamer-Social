@@ -1,8 +1,11 @@
 import os
 import json
+import logging
 import websocket
 import requests
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 from db import (
     save_redemption,
     get_connection,
@@ -30,7 +33,7 @@ def notify_backend(broadcaster_id, event_type, data):
             headers={"Authorization": f"Bearer {_INTERNAL_KEY}"},
         )
     except Exception as e:
-        print("Notify failed:", e)
+        logger.error("Notify failed: %s", e)
 
 
 def subscribe(ws_session_id, broadcaster_id, access_token, client_id):
@@ -64,14 +67,14 @@ def subscribe(ws_session_id, broadcaster_id, access_token, client_id):
         res = requests.post(url, headers=headers, json=sub)
 
         if res.status_code == 401:
-            print("Token expired, refreshing...")
+            logger.warning("Token expired for %s, refreshing...", broadcaster_id)
             new_token = refresh_access_token(broadcaster_id)
             if not new_token:
                 continue
             headers["Authorization"] = f"Bearer {new_token}"
             res = requests.post(url, headers=headers, json=sub)
 
-        print(f"Subscription [{sub['type']}]:", res.status_code, res.text)
+        logger.info("Subscription [%s]: %s %s", sub["type"], res.status_code, res.text)
 
 
 # ── Schedule helpers ───────────────────────────────────────────────────────────
@@ -139,7 +142,7 @@ def run_tracker_for_streamer(streamer, shutdown_event=None):
 
         if msg_type == "session_welcome":
             ws_session_id = data["payload"]["session"]["id"]
-            print(f"Subscribing for {broadcaster_id}")
+            logger.info("Subscribing for %s", broadcaster_id)
             subscribe(ws_session_id, broadcaster_id, access_token, client_id)
 
         elif msg_type == "notification":
@@ -160,8 +163,7 @@ def run_tracker_for_streamer(streamer, shutdown_event=None):
                 active = get_active_session(broadcaster_id)
                 db_session_id = active["id"] if active else None
 
-                print(f"{reward_title} redeemed by {user_name} "
-                      f"(session={db_session_id})")
+                logger.info("%s redeemed by %s (session=%s)", reward_title, user_name, db_session_id)
 
                 save_redemption(
                     event_id, broadcaster_id,
@@ -192,11 +194,10 @@ def run_tracker_for_streamer(streamer, shutdown_event=None):
                     session_meta["required_day"],
                 )
 
-                print(
-                    f"Stream ONLINE for {broadcaster_id} "
-                    f"(counts_toward_streak={session_meta['counts_toward_streak']}, "
-                    f"required_day={session_meta['required_day']}, "
-                    f"day={session_meta['scheduled_day']})"
+                logger.info(
+                    "Stream ONLINE for %s (counts_toward_streak=%s, required_day=%s, day=%s)",
+                    broadcaster_id, session_meta["counts_toward_streak"],
+                    session_meta["required_day"], session_meta["scheduled_day"],
                 )
 
                 notify_backend(broadcaster_id, "stream_online", {
@@ -215,33 +216,34 @@ def run_tracker_for_streamer(streamer, shutdown_event=None):
                 closed_session = end_stream_session(broadcaster_id, ended_at)
 
                 if closed_session:
-                    print(
-                        f"Stream OFFLINE for {broadcaster_id} — settling streaks for "
-                        f"session {closed_session['id']} "
-                        f"(counts_toward_streak={closed_session.get('counts_toward_streak')}, "
-                        f"required_day={closed_session.get('required_day')}, "
-                        f"scheduled_day={closed_session.get('scheduled_day')})"
+                    logger.info(
+                        "Stream OFFLINE for %s — settling streaks for session %s "
+                        "(counts_toward_streak=%s, required_day=%s, scheduled_day=%s)",
+                        broadcaster_id, closed_session["id"],
+                        closed_session.get("counts_toward_streak"),
+                        closed_session.get("required_day"),
+                        closed_session.get("scheduled_day"),
                     )
                     try:
                         settle_streaks_for_session(closed_session)
-                        print(f"Streaks settled for session {closed_session['id']}")
+                        logger.info("Streaks settled for session %s", closed_session["id"])
                     except Exception as e:
-                        print(f"Streak settlement failed: {e}")
+                        logger.error("Streak settlement failed: %s", e)
                 else:
-                    print(f"Stream OFFLINE for {broadcaster_id} — no open session found")
+                    logger.warning("Stream OFFLINE for %s — no open session found", broadcaster_id)
 
                 notify_backend(broadcaster_id, "stream_offline", {
                     "ended_at": ended_at.isoformat(),
                 })
 
     def on_open(ws):
-        print(f"WS connected for {broadcaster_id}")
+        logger.info("WS connected for %s", broadcaster_id)
 
     import time
     backoff = 5
     while not (shutdown_event and shutdown_event.is_set()):
         try:
-            print(f"Starting WS for {broadcaster_id}")
+            logger.info("Starting WS for %s", broadcaster_id)
             ws = websocket.WebSocketApp(
                 "wss://eventsub.wss.twitch.tv/ws",
                 on_message=on_message,
@@ -250,11 +252,11 @@ def run_tracker_for_streamer(streamer, shutdown_event=None):
             ws.run_forever()
             backoff = 5  # reset after a clean disconnect
         except Exception as e:
-            print("Websocket crashed:", e)
+            logger.error("Websocket crashed: %s", e)
 
         if shutdown_event and shutdown_event.is_set():
             break
 
-        print(f"Reconnecting in {backoff} seconds...")
+        logger.warning("Reconnecting in %s seconds...", backoff)
         time.sleep(backoff)
         backoff = min(backoff * 2, 120)

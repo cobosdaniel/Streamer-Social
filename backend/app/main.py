@@ -15,9 +15,12 @@ from db import (
     refresh_access_token,
 )
 import os
+import logging
 import secrets
 import time
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 import httpx
 from tracker_manager import start_tracker, stop_all_trackers
 from typing import Optional
@@ -380,13 +383,13 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(None)):
         return
     user_id = str(user_id)
     await manager.connect(websocket, user_id)
-    print("WS CONNECTED FOR USER:", user_id)
+    logger.info("WS connected for user %s", user_id)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket, user_id)
-        print("WS DISCONNECTED FOR USER:", user_id)
+        logger.info("WS disconnected for user %s", user_id)
 
 
 # ── Internal push from tracker ─────────────────────────────────────────────────
@@ -409,6 +412,11 @@ async def push_event(payload: dict, _: None = Depends(verify_internal_key)):
 
 @app.on_event("startup")
 def startup_event():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
+
     user_tokens.update(load_all_user_tokens())
 
     conn   = get_connection()
