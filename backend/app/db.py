@@ -1,18 +1,23 @@
 import os
 import json
 import mysql.connector
+import mysql.connector.pooling
 from dotenv import load_dotenv
 
 load_dotenv("db.env")
 
+_pool = mysql.connector.pooling.MySQLConnectionPool(
+    pool_name="main",
+    pool_size=5,
+    host=os.getenv("DB_HOST"),
+    port=int(os.getenv("DB_PORT")),
+    user=os.getenv("DB_USER"),
+    password=os.getenv("DB_PASSWORD"),
+    database=os.getenv("DB_NAME"),
+)
+
 def get_connection():
-    return mysql.connector.connect(
-        host=os.getenv("DB_HOST"),
-        port=int(os.getenv("DB_PORT")),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        database=os.getenv("DB_NAME"),
-    )
+    return _pool.get_connection()
 
 def upsert_streamer(twitch_user_id, login, client_id):
     conn = get_connection()

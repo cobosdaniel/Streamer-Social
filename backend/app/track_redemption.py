@@ -148,7 +148,7 @@ def classify_session(broadcaster_id, started_at: datetime):
             "required_day": True,
         }
 
-    hour, minute = map(int, scheduled_time_str.split(":"))
+    hour, minute = map(int, scheduled_time_str.split(":")[:2])
     scheduled_dt = started_at.replace(hour=hour, minute=minute, second=0, microsecond=0)
     delta = abs((started_at - scheduled_dt).total_seconds())
     within_window = delta <= 7200
@@ -215,7 +215,7 @@ def run_tracker_for_streamer(streamer):
 
             # ── Stream online ─────────────────────────────────────────────────
             elif sub_type == "stream.online":
-                started_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                started_at = datetime.now(timezone.utc)
                 session_meta = classify_session(broadcaster_id, started_at)
 
                 db_session_id = save_stream_session(
@@ -243,7 +243,7 @@ def run_tracker_for_streamer(streamer):
 
             # ── Stream offline ────────────────────────────────────────────────
             elif sub_type == "stream.offline":
-                ended_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                ended_at = datetime.now(timezone.utc)
 
                 # Close the session and get back the closed row
                 closed_session = end_stream_session(broadcaster_id, ended_at)
@@ -271,6 +271,8 @@ def run_tracker_for_streamer(streamer):
     def on_open(ws):
         print(f"WS connected for {broadcaster_id}")
 
+    import time
+    backoff = 5
     while True:
         try:
             print(f"Starting WS for {broadcaster_id}")
@@ -280,9 +282,10 @@ def run_tracker_for_streamer(streamer):
                 on_open=on_open,
             )
             ws.run_forever()
+            backoff = 5  # reset after a clean disconnect
         except Exception as e:
             print("Websocket crashed:", e)
 
-        print("Reconnecting in 5 seconds...")
-        import time
-        time.sleep(5)
+        print(f"Reconnecting in {backoff} seconds...")
+        time.sleep(backoff)
+        backoff = min(backoff * 2, 120)
