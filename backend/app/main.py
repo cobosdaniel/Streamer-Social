@@ -7,6 +7,9 @@ from db import (
     get_connection, upsert_streamer, save_tokens,
     get_streak_schedule, save_streak_schedule,
     get_viewer_streaks,
+    save_session, get_session, delete_session,
+    get_user_token_data, load_all_user_tokens,
+    refresh_access_token,
 )
 import os
 import secrets
@@ -27,8 +30,17 @@ FRONTEND_BASE_URL    = os.getenv("FRONTEND_BASE_URL")
 INTERNAL_API_KEY     = os.environ["INTERNAL_API_KEY"]
 
 pending_states = {}
-user_tokens    = {}
-sessions       = {}
+user_tokens    = {}  # in-memory cache; populated from DB on startup and on login
+
+
+def get_user_tokens(twitch_user_id: str) -> dict | None:
+    data = user_tokens.get(twitch_user_id)
+    if data:
+        return data
+    data = get_user_token_data(twitch_user_id)
+    if data:
+        user_tokens[twitch_user_id] = data
+    return data
 
 AUTH_URL     = "https://id.twitch.tv/oauth2/authorize"
 TOKEN_URL    = "https://id.twitch.tv/oauth2/token"
@@ -73,9 +85,12 @@ app.add_middleware(
 
 def get_current_user(request: Request):
     token = request.cookies.get("session_token")
-    if not token or token not in sessions:
+    if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return sessions[token]["twitch_user_id"]
+    row = get_session(token)
+    if not row:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return row["twitch_user_id"]
 
 
 # ── Redemptions ────────────────────────────────────────────────────────────────
@@ -145,7 +160,7 @@ async def get_streaks(reward_title: str, user_id: str = Depends(get_current_user
 
 @app.get("/api/rewards")
 async def get_rewards(user_id: str = Depends(get_current_user)):
-    user_data = user_tokens.get(user_id)
+    user_data = get_user_tokens(user_id)
 
     if not user_data:
         raise HTTPException(status_code=404, detail="User data not found")
@@ -162,6 +177,20 @@ async def get_rewards(user_id: str = Depends(get_current_user)):
                 "Authorization": f"Bearer {access_token}",
             },
         )
+
+        if res.status_code == 401:
+            new_token = refresh_access_token(user_id)
+            if not new_token:
+                raise HTTPException(status_code=401, detail="Token expired and refresh failed")
+            user_tokens[user_id] = {**user_data, "access_token": new_token}
+            res = await client.get(
+                "https://api.twitch.tv/helix/channel_points/custom_rewards",
+                params={"broadcaster_id": user_id},
+                headers={
+                    "Client-ID": client_id,
+                    "Authorization": f"Bearer {new_token}",
+                },
+            )
 
     if res.status_code != 200:
         raise HTTPException(status_code=res.status_code, detail=res.text)
@@ -228,15 +257,15 @@ def twitch_login():
 @app.post("/auth/logout")
 def logout(request: Request):
     token = request.cookies.get("session_token")
-    if token and token in sessions:
-        del sessions[token]
+    if token:
+        delete_session(token)
     response = JSONResponse({"message": "Logged out successfully"})
     response.delete_cookie(key="session_token", httponly=True, samesite="lax")
     return response
 
 @app.get("/api/me")
 async def me(user_id: str = Depends(get_current_user)):
-    user_data = user_tokens.get(user_id)
+    user_data = get_user_tokens(user_id)
     if not user_data:
         raise HTTPException(status_code=404, detail="User data not found")
     return {"login": user_data.get("login"), "broadcaster_id": user_id}
@@ -282,6 +311,12 @@ async def twitch_callback(
     if not twitch_user_id:
         raise HTTPException(status_code=500, detail="Token validated but no user_id returned")
 
+    upsert_streamer(twitch_user_id=twitch_user_id, login=login, client_id=client_id)
+    save_tokens(
+        twitch_user_id=twitch_user_id, access_token=access_token,
+        refresh_token=refresh_token, expires_in=expires_in, scopes=scopes,
+    )
+
     user_tokens[twitch_user_id] = {
         "access_token":  access_token,
         "refresh_token": refresh_token,
@@ -291,18 +326,12 @@ async def twitch_callback(
         "login":         login,
     }
 
-    upsert_streamer(twitch_user_id=twitch_user_id, login=login, client_id=client_id)
-    save_tokens(
-        twitch_user_id=twitch_user_id, access_token=access_token,
-        refresh_token=refresh_token, expires_in=expires_in, scopes=scopes,
-    )
-
     start_tracker({"twitch_user_id": twitch_user_id, "access_token": access_token,
                    "client_id": client_id, "login": login})
     del pending_states[state]
 
     session_token = secrets.token_urlsafe(32)
-    sessions[session_token] = {"twitch_user_id": twitch_user_id, "created": time.time()}
+    save_session(session_token, twitch_user_id)
 
     response = RedirectResponse(url=f"{FRONTEND_BASE_URL}/dashboard")
     response.set_cookie(
@@ -313,7 +342,7 @@ async def twitch_callback(
 
 @app.get("/api/dashboard")
 async def dashboard(user_id: str = Depends(get_current_user)):
-    user_data = user_tokens.get(user_id)
+    user_data = get_user_tokens(user_id)
     if not user_data:
         raise HTTPException(status_code=404, detail="User data not found")
     return {
@@ -362,6 +391,8 @@ async def push_event(payload: dict, _: None = Depends(verify_internal_key)):
 
 @app.on_event("startup")
 def startup_event():
+    user_tokens.update(load_all_user_tokens())
+
     conn   = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
