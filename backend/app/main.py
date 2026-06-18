@@ -13,6 +13,7 @@ from db import (
     save_session, get_session, delete_session,
     get_user_token_data, load_all_user_tokens,
     refresh_access_token,
+    get_streak_reward, save_streak_reward,
 )
 import os
 import logging
@@ -237,6 +238,27 @@ class ScheduleDay(BaseModel):
 
 class StreakSchedulePayload(BaseModel):
     scheduled_days: list[ScheduleDay]
+
+@app.get("/api/streak-reward")
+@limiter.limit("60/minute")
+async def get_streak_reward_endpoint(request: Request, user_id: str = Depends(get_current_user)):
+    return {"reward_title": get_streak_reward(user_id)}
+
+
+class StreakRewardPayload(BaseModel):
+    reward_title: str
+
+
+@app.post("/api/streak-reward")
+@limiter.limit("20/minute")
+async def set_streak_reward_endpoint(
+    request: Request,
+    payload: StreakRewardPayload,
+    user_id: str = Depends(get_current_user),
+):
+    save_streak_reward(user_id, payload.reward_title)
+    return {"ok": True, "reward_title": payload.reward_title}
+
 
 @app.get("/api/streak-schedule")
 async def get_schedule(user_id: str = Depends(get_current_user)):
