@@ -88,14 +88,14 @@ function DateRangeFilter({
       <TextField
         size="small" type="date" value={from}
         onChange={(e) => onFromChange(e.target.value)}
-        inputProps={{ max: to || undefined }}
+        slotProps={{ htmlInput: { max: to || undefined } }}
         sx={inputSx}
       />
       <span style={{ color: "#6a5c80", fontSize: "11px" }}>–</span>
       <TextField
         size="small" type="date" value={to}
         onChange={(e) => onToChange(e.target.value)}
-        inputProps={{ min: from || undefined }}
+        slotProps={{ htmlInput: { min: from || undefined } }}
         sx={inputSx}
       />
       {(from || to) && (
