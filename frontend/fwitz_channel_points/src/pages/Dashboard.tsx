@@ -478,9 +478,6 @@ export default function Dashboard() {
             <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Watch Streaks</h2>
             <RewardDropdown value={streakReward} options={rewards} onChange={handleStreakRewardChange} />
           </div>
-          <div style={{ marginBottom: "10px" }}>
-            <DateRangeFilter from={streakFrom} to={streakTo} onFromChange={setStreakFrom} onToChange={setStreakTo} />
-          </div>
           {streakLoading ? (
             <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>Loading...</p>
           ) : streaks.length === 0 ? (
