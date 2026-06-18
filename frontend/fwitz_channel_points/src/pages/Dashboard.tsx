@@ -68,6 +68,50 @@ function LiveBadge() {
   );
 }
 
+function DateRangeFilter({
+  from, to, onFromChange, onToChange,
+}: {
+  from: string; to: string;
+  onFromChange: (v: string) => void;
+  onToChange:   (v: string) => void;
+}) {
+  const inputSx = {
+    width: 130,
+    "& .MuiInputBase-root": {
+      color: "#f4ecff", background: "rgba(255,255,255,0.06)", fontSize: "11px",
+    },
+    "& .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255,255,255,0.12)" },
+    "& input::-webkit-calendar-picker-indicator": { filter: "invert(0.7)" },
+  };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+      <TextField
+        size="small" type="date" value={from}
+        onChange={(e) => onFromChange(e.target.value)}
+        slotProps={{ htmlInput: { max: to || undefined } }}
+        sx={inputSx}
+      />
+      <span style={{ color: "#6a5c80", fontSize: "11px" }}>–</span>
+      <TextField
+        size="small" type="date" value={to}
+        onChange={(e) => onToChange(e.target.value)}
+        slotProps={{ htmlInput: { min: from || undefined } }}
+        sx={inputSx}
+      />
+      {(from || to) && (
+        <button
+          onClick={() => { onFromChange(""); onToChange(""); }}
+          style={{
+            background: "none", border: "none", cursor: "pointer",
+            color: "#6a5c80", fontSize: "16px", lineHeight: 1, padding: "0 2px",
+          }}
+          title="Clear dates"
+        >×</button>
+      )}
+    </div>
+  );
+}
+
 function RewardDropdown({
   value,
   options,
@@ -130,10 +174,18 @@ export default function Dashboard() {
   const [lbReward,    setLbReward]    = useState("");
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [lbLoading,   setLbLoading]   = useState(false);
+  const [lbFrom,      setLbFrom]      = useState("");
+  const [lbTo,        setLbTo]        = useState("");
 
   const [streakReward,  setStreakReward]  = useState("");
   const [streaks,       setStreaks]       = useState<StreakEntry[]>([]);
   const [streakLoading, setStreakLoading] = useState(false);
+  const [streakFrom,    setStreakFrom]    = useState("");
+  const [streakTo,      setStreakTo]      = useState("");
+
+  const [pendingStreakReward,   setPendingStreakReward]   = useState<string | null>(null);
+  const [confirmDialogOpen,     setConfirmDialogOpen]     = useState(false);
+  const [streakRewardSaving,    setStreakRewardSaving]    = useState(false);
 
   const [schedule,        setSchedule]        = useState<ScheduleDay[]>(DAYS.map((d) => ({ day: d, time: "" })));
   const [selectedDays,    setSelectedDays]     = useState<Set<string>>(new Set());
@@ -169,7 +221,21 @@ export default function Dashboard() {
 
         if (rewardData.length > 0) {
           setLbReward(rewardData[0].title);
-          setStreakReward(rewardData[0].title);
+        }
+
+        // Load the configured streak reward, fall back to first reward
+        try {
+          const srRes = await fetch(`${API_BASE}/api/streak-reward`, { credentials: "include" });
+          if (srRes.ok) {
+            const srData = await srRes.json();
+            const configured = srData.reward_title;
+            const match = rewardData.find((r) => r.title === configured);
+            setStreakReward(match ? configured : (rewardData[0]?.title ?? ""));
+          } else {
+            setStreakReward(rewardData[0]?.title ?? "");
+          }
+        } catch {
+          setStreakReward(rewardData[0]?.title ?? "");
         }
 
         // Schedule fetch is optional — if Railway hasn't deployed new main.py yet,
@@ -203,17 +269,23 @@ export default function Dashboard() {
   useEffect(() => {
     if (!lbReward) return;
     setLbLoading(true);
-    fetch(`${API_BASE}/api/leaderboard?reward_title=${encodeURIComponent(lbReward)}`, { credentials: "include" })
+    const params = new URLSearchParams({ reward_title: lbReward });
+    if (lbFrom) params.set("from_date", lbFrom);
+    if (lbTo)   params.set("to_date",   lbTo);
+    fetch(`${API_BASE}/api/leaderboard?${params}`, { credentials: "include" })
       .then((r) => r.json()).then(setLeaderboard).catch(console.error).finally(() => setLbLoading(false));
-  }, [lbReward]);
+  }, [lbReward, lbFrom, lbTo]);
 
   // ── Streaks fetch ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!streakReward) return;
     setStreakLoading(true);
-    fetch(`${API_BASE}/api/streaks?reward_title=${encodeURIComponent(streakReward)}`, { credentials: "include" })
+    const params = new URLSearchParams({ reward_title: streakReward });
+    if (streakFrom) params.set("from_date", streakFrom);
+    if (streakTo)   params.set("to_date",   streakTo);
+    fetch(`${API_BASE}/api/streaks?${params}`, { credentials: "include" })
       .then((r) => r.json()).then(setStreaks).catch(console.error).finally(() => setStreakLoading(false));
-  }, [streakReward]);
+  }, [streakReward, streakFrom, streakTo]);
 
   // ── WebSocket ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -252,7 +324,10 @@ export default function Dashboard() {
       } else if (msg.type === "stream_offline") {
         setStreamStatus({ live: false });
         if (streakReward) {
-          fetch(`${API_BASE}/api/streaks?reward_title=${encodeURIComponent(streakReward)}`, { credentials: "include" })
+          const params = new URLSearchParams({ reward_title: streakReward });
+          if (streakFrom) params.set("from_date", streakFrom);
+          if (streakTo)   params.set("to_date",   streakTo);
+          fetch(`${API_BASE}/api/streaks?${params}`, { credentials: "include" })
             .then((r) => r.json()).then(setStreaks).catch(console.error);
         }
       }
@@ -296,6 +371,37 @@ export default function Dashboard() {
     }
   }
 
+  // ── Streak reward config ────────────────────────────────────────────────────
+  function handleStreakRewardChange(title: string) {
+    if (!title || title === streakReward) return;
+    setPendingStreakReward(title);
+    setConfirmDialogOpen(true);
+  }
+
+  async function confirmStreakReward() {
+    if (!pendingStreakReward) return;
+    setStreakRewardSaving(true);
+    try {
+      await fetch(`${API_BASE}/api/streak-reward`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reward_title: pendingStreakReward }),
+      });
+      setStreakReward(pendingStreakReward);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setStreakRewardSaving(false);
+      setConfirmDialogOpen(false);
+      setPendingStreakReward(null);
+    }
+  }
+
+  function cancelStreakReward() {
+    setConfirmDialogOpen(false);
+    setPendingStreakReward(null);
+  }
+
   // ── Early returns ───────────────────────────────────────────────────────────
   if (loading) return <main style={{ padding: "40px 20px" }}><p>Loading dashboard...</p></main>;
   if (error) return (
@@ -333,9 +439,12 @@ export default function Dashboard() {
 
         {/* Leaderboard */}
         <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
             <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Leaderboard</h2>
             <RewardDropdown value={lbReward} options={rewards} onChange={setLbReward} />
+          </div>
+          <div style={{ marginBottom: "10px" }}>
+            <DateRangeFilter from={lbFrom} to={lbTo} onFromChange={setLbFrom} onToChange={setLbTo} />
           </div>
           {lbLoading ? (
             <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>Loading...</p>
@@ -365,9 +474,12 @@ export default function Dashboard() {
 
         {/* Watch Streaks */}
         <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
             <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Watch Streaks</h2>
-            <RewardDropdown value={streakReward} options={rewards} onChange={setStreakReward} />
+            <RewardDropdown value={streakReward} options={rewards} onChange={handleStreakRewardChange} />
+          </div>
+          <div style={{ marginBottom: "10px" }}>
+            <DateRangeFilter from={streakFrom} to={streakTo} onFromChange={setStreakFrom} onToChange={setStreakTo} />
           </div>
           {streakLoading ? (
             <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>Loading...</p>
@@ -494,6 +606,49 @@ export default function Dashboard() {
           </div>
         )}
       </section>
+      {/* Confirm streak reward dialog */}
+      {confirmDialogOpen && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+        }}>
+          <div style={{
+            background: "#1a1330", border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: "12px", padding: "24px 28px", maxWidth: "380px", width: "90%",
+          }}>
+            <h3 style={{ margin: "0 0 10px", fontSize: "15px", fontWeight: 700, color: "#f4ecff" }}>
+              Set check-in reward?
+            </h3>
+            <p style={{ margin: "0 0 20px", fontSize: "13px", color: "#a090c0", lineHeight: 1.5 }}>
+              <span style={{ color: "#c5bcff", fontWeight: 600 }}>"{pendingStreakReward}"</span> will be
+              set as your daily check-in / watch streak reward. Only this redemption will count toward viewer streaks.
+            </p>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+              <button
+                onClick={cancelStreakReward}
+                style={{
+                  padding: "6px 16px", borderRadius: "7px", cursor: "pointer",
+                  background: "transparent", border: "1px solid rgba(255,255,255,0.12)",
+                  color: "#a090c0", fontSize: "13px", fontWeight: 600,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmStreakReward}
+                disabled={streakRewardSaving}
+                style={{
+                  padding: "6px 16px", borderRadius: "7px", cursor: "pointer",
+                  background: "rgba(139,123,255,0.2)", border: "1px solid #8b7bff",
+                  color: "#c5bcff", fontSize: "13px", fontWeight: 600,
+                }}
+              >
+                {streakRewardSaving ? "Saving..." : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

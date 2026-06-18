@@ -176,19 +176,21 @@ def settle_streaks_for_session(session):
     counts_toward_streak = bool(session.get("counts_toward_streak", 1))
     required_day = bool(session.get("required_day", 1))
 
+    configured_reward = get_streak_reward(twitch_user_id)
+
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
         conn.start_transaction()
 
-        # Find all distinct reward titles redeemed during this session
-        cursor.execute("""
-            SELECT DISTINCT reward_title
-            FROM redemptions
-            WHERE session_id = %s
-              AND twitch_user_id = %s
-        """, (session_id, twitch_user_id))
-        reward_rows = cursor.fetchall()
+        if configured_reward:
+            reward_rows = [{"reward_title": configured_reward}]
+        else:
+            # No reward configured — settle nothing
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return
 
         for rr in reward_rows:
             reward_title = rr["reward_title"]
@@ -220,8 +222,8 @@ def settle_streaks_for_session(session):
                         VALUES (%s, %s, %s, %s, 1, 1, %s)
                         ON DUPLICATE KEY UPDATE
                             user_name = VALUES(user_name),
-                            current_streak = current_streak + 1,
                             longest_streak = GREATEST(longest_streak, current_streak + 1),
+                            current_streak = current_streak + 1,
                             last_session_id = VALUES(last_session_id)
                     """, (twitch_user_id, viewer_twitch_id, user_name, reward_title, session_id))
 
@@ -257,24 +259,31 @@ def settle_streaks_for_session(session):
         conn.close()
 
 
-def get_viewer_streaks(twitch_user_id, reward_title, limit=20):
+def get_viewer_streaks(twitch_user_id, reward_title, limit=20, from_date=None, to_date=None):
     """Fast single-query fetch from the cached viewer_streaks table."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("""
-        SELECT
-            user_name,
-            current_streak,
-            longest_streak,
-            last_session_id,
-            updated_at
+
+    query  = """
+        SELECT user_name, current_streak, longest_streak, last_session_id, updated_at
         FROM viewer_streaks
         WHERE twitch_user_id = %s
           AND reward_title = %s
           AND current_streak > 0
-        ORDER BY current_streak DESC, longest_streak DESC
-        LIMIT %s
-    """, (twitch_user_id, reward_title, limit))
+    """
+    params: list = [twitch_user_id, reward_title]
+
+    if from_date:
+        query += " AND updated_at >= %s"
+        params.append(from_date)
+    if to_date:
+        query += " AND updated_at < DATE_ADD(%s, INTERVAL 1 DAY)"
+        params.append(to_date)
+
+    query += " ORDER BY current_streak DESC, longest_streak DESC LIMIT %s"
+    params.append(limit)
+
+    cursor.execute(query, params)
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -308,6 +317,50 @@ def save_streak_schedule(twitch_user_id, scheduled_days):
             scheduled_days = VALUES(scheduled_days),
             updated_at = CURRENT_TIMESTAMP
     """, (twitch_user_id, json.dumps(scheduled_days)))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+# ── Streak reward config ───────────────────────────────────────────────────────
+
+def _ensure_streak_reward_column():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        ALTER TABLE streak_schedules
+        ADD COLUMN IF NOT EXISTS reward_title VARCHAR(255) DEFAULT NULL
+    """)
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+_ensure_streak_reward_column()
+
+
+def get_streak_reward(twitch_user_id: str) -> str | None:
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT reward_title FROM streak_schedules WHERE twitch_user_id = %s",
+        (twitch_user_id,),
+    )
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return row["reward_title"] if row else None
+
+
+def save_streak_reward(twitch_user_id: str, reward_title: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO streak_schedules (twitch_user_id, scheduled_days, reward_title)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            reward_title = VALUES(reward_title),
+            updated_at   = CURRENT_TIMESTAMP
+    """, (twitch_user_id, json.dumps([]), reward_title))
     conn.commit()
     cursor.close()
     conn.close()
