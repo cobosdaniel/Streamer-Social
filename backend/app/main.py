@@ -3,6 +3,9 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from db import (
     get_connection, upsert_streamer, save_tokens,
     get_streak_schedule, save_streak_schedule,
@@ -22,6 +25,9 @@ from typing import Optional
 load_dotenv("user_oauth.env")
 
 app = FastAPI()
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 TWITCH_CLIENT_ID     = os.environ["TWITCH_CLIENT_ID"]
 TWITCH_CLIENT_SECRET = os.environ["TWITCH_CLIENT_SECRET"]
@@ -96,7 +102,8 @@ def get_current_user(request: Request):
 # ── Redemptions ────────────────────────────────────────────────────────────────
 
 @app.get("/api/redemptions")
-async def get_redemptions(user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_redemptions(request: Request, user_id: str = Depends(get_current_user)):
     conn   = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
@@ -118,7 +125,8 @@ async def get_redemptions(user_id: str = Depends(get_current_user)):
 # ── Leaderboard ────────────────────────────────────────────────────────────────
 
 @app.get("/api/leaderboard")
-async def get_leaderboard(reward_title: str, user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_leaderboard(request: Request, reward_title: str, user_id: str = Depends(get_current_user)):
     conn   = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
@@ -138,7 +146,8 @@ async def get_leaderboard(reward_title: str, user_id: str = Depends(get_current_
 # ── Streaks — fast cached read ─────────────────────────────────────────────────
 
 @app.get("/api/streaks")
-async def get_streaks(reward_title: str, user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_streaks(request: Request, reward_title: str, user_id: str = Depends(get_current_user)):
     """
     Returns pre-computed streaks from viewer_streaks.
     Streaks are settled incrementally in track_redemption.py when each
@@ -159,7 +168,8 @@ async def get_streaks(reward_title: str, user_id: str = Depends(get_current_user
 # ── Rewards ─────────────────────────────────────────────────
 
 @app.get("/api/rewards")
-async def get_rewards(user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_rewards(request: Request, user_id: str = Depends(get_current_user)):
     user_data = get_user_tokens(user_id)
 
     if not user_data:
@@ -256,7 +266,8 @@ def root():
     return {"message": "FastAPI Twitch auth server is running"}
 
 @app.get("/auth/twitch/login")
-def twitch_login():
+@limiter.limit("20/minute")
+def twitch_login(request: Request):
     return RedirectResponse(build_auth_url(["channel:read:redemptions"]))
 
 @app.post("/auth/logout")
@@ -276,7 +287,9 @@ async def me(user_id: str = Depends(get_current_user)):
     return {"login": user_data.get("login"), "broadcaster_id": user_id}
 
 @app.get("/auth/twitch/callback")
+@limiter.limit("20/minute")
 async def twitch_callback(
+    request: Request,
     code:  str | None = None,
     state: str | None = None,
     error: str | None = None,
