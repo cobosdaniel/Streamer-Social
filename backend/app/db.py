@@ -8,6 +8,9 @@ from dotenv import load_dotenv
 
 load_dotenv("db.env")
 
+for _var in ("DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"):
+    assert os.getenv(_var), f"Missing required environment variable: {_var}"
+
 _pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="main",
     pool_size=5,

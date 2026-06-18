@@ -3,6 +3,9 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from db import (
     get_connection, upsert_streamer, save_tokens,
     get_streak_schedule, save_streak_schedule,
@@ -12,16 +15,26 @@ from db import (
     refresh_access_token,
 )
 import os
+import logging
 import secrets
 import time
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 import httpx
-from tracker_manager import start_tracker
+from tracker_manager import start_tracker, stop_all_trackers
 from typing import Optional
 
 load_dotenv("user_oauth.env")
 
+for _var in ("TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_REDIRECT_URI",
+             "FRONTEND_BASE_URL", "INTERNAL_API_KEY"):
+    assert os.getenv(_var), f"Missing required environment variable: {_var}"
+
 app = FastAPI()
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 TWITCH_CLIENT_ID     = os.environ["TWITCH_CLIENT_ID"]
 TWITCH_CLIENT_SECRET = os.environ["TWITCH_CLIENT_SECRET"]
@@ -96,7 +109,8 @@ def get_current_user(request: Request):
 # ── Redemptions ────────────────────────────────────────────────────────────────
 
 @app.get("/api/redemptions")
-async def get_redemptions(user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_redemptions(request: Request, user_id: str = Depends(get_current_user)):
     conn   = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
@@ -118,7 +132,8 @@ async def get_redemptions(user_id: str = Depends(get_current_user)):
 # ── Leaderboard ────────────────────────────────────────────────────────────────
 
 @app.get("/api/leaderboard")
-async def get_leaderboard(reward_title: str, user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_leaderboard(request: Request, reward_title: str, user_id: str = Depends(get_current_user)):
     conn   = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
@@ -138,7 +153,8 @@ async def get_leaderboard(reward_title: str, user_id: str = Depends(get_current_
 # ── Streaks — fast cached read ─────────────────────────────────────────────────
 
 @app.get("/api/streaks")
-async def get_streaks(reward_title: str, user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_streaks(request: Request, reward_title: str, user_id: str = Depends(get_current_user)):
     """
     Returns pre-computed streaks from viewer_streaks.
     Streaks are settled incrementally in track_redemption.py when each
@@ -159,7 +175,8 @@ async def get_streaks(reward_title: str, user_id: str = Depends(get_current_user
 # ── Rewards ─────────────────────────────────────────────────
 
 @app.get("/api/rewards")
-async def get_rewards(user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_rewards(request: Request, user_id: str = Depends(get_current_user)):
     user_data = get_user_tokens(user_id)
 
     if not user_data:
@@ -235,8 +252,13 @@ async def update_schedule(
 # ── Auth ───────────────────────────────────────────────────────────────────────
 
 def build_auth_url(scopes: list[str]) -> str:
+    now = time.time()
+    expired = [k for k, v in pending_states.items() if now - v["created"] > 600]
+    for k in expired:
+        del pending_states[k]
+
     state = secrets.token_urlsafe(32)
-    pending_states[state] = {"created": time.time()}
+    pending_states[state] = {"created": now}
     scope_str = "%20".join(scopes)
     return (
         f"{AUTH_URL}?client_id={TWITCH_CLIENT_ID}"
@@ -251,7 +273,8 @@ def root():
     return {"message": "FastAPI Twitch auth server is running"}
 
 @app.get("/auth/twitch/login")
-def twitch_login():
+@limiter.limit("20/minute")
+def twitch_login(request: Request):
     return RedirectResponse(build_auth_url(["channel:read:redemptions"]))
 
 @app.post("/auth/logout")
@@ -271,7 +294,9 @@ async def me(user_id: str = Depends(get_current_user)):
     return {"login": user_data.get("login"), "broadcaster_id": user_id}
 
 @app.get("/auth/twitch/callback")
+@limiter.limit("20/minute")
 async def twitch_callback(
+    request: Request,
     code:  str | None = None,
     state: str | None = None,
     error: str | None = None,
@@ -362,13 +387,13 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str = Query(None)):
         return
     user_id = str(user_id)
     await manager.connect(websocket, user_id)
-    print("WS CONNECTED FOR USER:", user_id)
+    logger.info("WS connected for user %s", user_id)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket, user_id)
-        print("WS DISCONNECTED FOR USER:", user_id)
+        logger.info("WS disconnected for user %s", user_id)
 
 
 # ── Internal push from tracker ─────────────────────────────────────────────────
@@ -391,6 +416,11 @@ async def push_event(payload: dict, _: None = Depends(verify_internal_key)):
 
 @app.on_event("startup")
 def startup_event():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
+
     user_tokens.update(load_all_user_tokens())
 
     conn   = get_connection()
@@ -405,3 +435,8 @@ def startup_event():
     conn.close()
     for s in streamers:
         start_tracker(s)
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    stop_all_trackers(timeout=10)
