@@ -258,5 +258,7 @@ def run_tracker_for_streamer(streamer, shutdown_event=None):
             break
 
         logger.warning("Reconnecting in %s seconds...", backoff)
-        time.sleep(backoff)
+        interrupted = shutdown_event.wait(backoff) if shutdown_event else (time.sleep(backoff) or False)
+        if interrupted:
+            break
         backoff = min(backoff * 2, 120)

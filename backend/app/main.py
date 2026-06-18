@@ -20,6 +20,10 @@ import secrets
 import time
 from dotenv import load_dotenv
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+)
 logger = logging.getLogger(__name__)
 import httpx
 from tracker_manager import start_tracker, stop_all_trackers
@@ -281,6 +285,9 @@ def twitch_login(request: Request):
 def logout(request: Request):
     token = request.cookies.get("session_token")
     if token:
+        row = get_session(token)
+        if row:
+            user_tokens.pop(row["twitch_user_id"], None)
         delete_session(token)
     response = JSONResponse({"message": "Logged out successfully"})
     response.delete_cookie(key="session_token", httponly=True, samesite="lax")
@@ -416,11 +423,6 @@ async def push_event(payload: dict, _: None = Depends(verify_internal_key)):
 
 @app.on_event("startup")
 def startup_event():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    )
-
     user_tokens.update(load_all_user_tokens())
 
     conn   = get_connection()
