@@ -183,72 +183,67 @@ def settle_streaks_for_session(session):
     try:
         conn.start_transaction()
 
-        if configured_reward:
-            reward_rows = [{"reward_title": configured_reward}]
-        else:
+        if not configured_reward:
             # No reward configured — settle nothing
             conn.commit()
             cursor.close()
             conn.close()
             return
 
-        for rr in reward_rows:
-            reward_title = rr["reward_title"]
+        # Query redemptions by the configured reward but store streaks under
+        # the fixed sentinel so changing the reward never resets viewer streaks.
+        _STREAK_KEY = "__streak__"
 
-            # Viewers who checked in for this reward during this session
-            # Select both user_id (permanent) and user_name (display, may change)
-            cursor.execute("""
-                SELECT DISTINCT user_id, user_name
-                FROM redemptions
-                WHERE session_id = %s
-                  AND twitch_user_id = %s
-                  AND reward_title = %s
-            """, (session_id, twitch_user_id, reward_title))
-            checked_in = {r["user_id"]: r["user_name"] for r in cursor.fetchall()}
+        cursor.execute("""
+            SELECT DISTINCT user_id, user_name
+            FROM redemptions
+            WHERE session_id = %s
+              AND twitch_user_id = %s
+              AND reward_title = %s
+        """, (session_id, twitch_user_id, configured_reward))
+        checked_in = {r["user_id"]: r["user_name"] for r in cursor.fetchall()}
 
-            # Reward attendance on any counted session
-            if counts_toward_streak:
-                for viewer_twitch_id, user_name in checked_in.items():
-                    cursor.execute("""
-                        INSERT INTO viewer_streaks (
-                            twitch_user_id,
-                            viewer_twitch_id,
-                            user_name,
-                            reward_title,
-                            current_streak,
-                            longest_streak,
-                            last_session_id
-                        )
-                        VALUES (%s, %s, %s, %s, 1, 1, %s)
-                        ON DUPLICATE KEY UPDATE
-                            user_name = VALUES(user_name),
-                            longest_streak = GREATEST(longest_streak, current_streak + 1),
-                            current_streak = current_streak + 1,
-                            last_session_id = VALUES(last_session_id)
-                    """, (twitch_user_id, viewer_twitch_id, user_name, reward_title, session_id))
+        if counts_toward_streak:
+            for viewer_twitch_id, user_name in checked_in.items():
+                cursor.execute("""
+                    INSERT INTO viewer_streaks (
+                        twitch_user_id,
+                        viewer_twitch_id,
+                        user_name,
+                        reward_title,
+                        current_streak,
+                        longest_streak,
+                        last_session_id
+                    )
+                    VALUES (%s, %s, %s, %s, 1, 1, %s)
+                    ON DUPLICATE KEY UPDATE
+                        user_name = VALUES(user_name),
+                        longest_streak = GREATEST(longest_streak, current_streak + 1),
+                        current_streak = current_streak + 1,
+                        last_session_id = VALUES(last_session_id)
+                """, (twitch_user_id, viewer_twitch_id, user_name, _STREAK_KEY, session_id))
 
-            # Only penalize misses on required days
-            if required_day:
-                checked_in_ids = list(checked_in.keys())
-                if checked_in_ids:
-                    placeholders = ",".join(["%s"] * len(checked_in_ids))
-                    params = (twitch_user_id, reward_title, *checked_in_ids)
-                    cursor.execute(f"""
-                        UPDATE viewer_streaks
-                        SET current_streak = 0
-                        WHERE twitch_user_id = %s
-                          AND reward_title = %s
-                          AND current_streak > 0
-                          AND viewer_twitch_id NOT IN ({placeholders})
-                    """, params)
-                else:
-                    cursor.execute("""
-                        UPDATE viewer_streaks
-                        SET current_streak = 0
-                        WHERE twitch_user_id = %s
-                          AND reward_title = %s
-                          AND current_streak > 0
-                    """, (twitch_user_id, reward_title))
+        if required_day:
+            checked_in_ids = list(checked_in.keys())
+            if checked_in_ids:
+                placeholders = ",".join(["%s"] * len(checked_in_ids))
+                params = (twitch_user_id, _STREAK_KEY, *checked_in_ids)
+                cursor.execute(f"""
+                    UPDATE viewer_streaks
+                    SET current_streak = 0
+                    WHERE twitch_user_id = %s
+                      AND reward_title = %s
+                      AND current_streak > 0
+                      AND viewer_twitch_id NOT IN ({placeholders})
+                """, params)
+            else:
+                cursor.execute("""
+                    UPDATE viewer_streaks
+                    SET current_streak = 0
+                    WHERE twitch_user_id = %s
+                      AND reward_title = %s
+                      AND current_streak > 0
+                """, (twitch_user_id, _STREAK_KEY))
 
         conn.commit()
     except Exception:
@@ -259,7 +254,7 @@ def settle_streaks_for_session(session):
         conn.close()
 
 
-def get_viewer_streaks(twitch_user_id, reward_title, limit=20, from_date=None, to_date=None):
+def get_viewer_streaks(twitch_user_id, limit=20, from_date=None, to_date=None):
     """Fast single-query fetch from the cached viewer_streaks table."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -268,10 +263,10 @@ def get_viewer_streaks(twitch_user_id, reward_title, limit=20, from_date=None, t
         SELECT user_name, current_streak, longest_streak, last_session_id, updated_at
         FROM viewer_streaks
         WHERE twitch_user_id = %s
-          AND reward_title = %s
+          AND reward_title = '__streak__'
           AND current_streak > 0
     """
-    params: list = [twitch_user_id, reward_title]
+    params: list = [twitch_user_id]
 
     if from_date:
         query += " AND updated_at >= %s"

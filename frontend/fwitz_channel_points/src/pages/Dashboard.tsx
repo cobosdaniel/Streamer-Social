@@ -196,8 +196,6 @@ export default function Dashboard() {
   const [streakReward,  setStreakReward]  = useState("");
   const [streaks,       setStreaks]       = useState<StreakEntry[]>([]);
   const [streakLoading, setStreakLoading] = useState(false);
-  const [streakFrom,    setStreakFrom]    = useState("");
-  const [streakTo,      setStreakTo]      = useState("");
 
   const [pendingStreakReward,   setPendingStreakReward]   = useState<string | null>(null);
   const [confirmDialogOpen,     setConfirmDialogOpen]     = useState(false);
@@ -313,14 +311,10 @@ export default function Dashboard() {
 
   // ── Streaks fetch ───────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!streakReward) return;
     setStreakLoading(true);
-    const params = new URLSearchParams({ reward_title: streakReward });
-    if (streakFrom) params.set("from_date", streakFrom);
-    if (streakTo)   params.set("to_date",   streakTo);
-    fetch(`${API_BASE}/api/streaks?${params}`, { credentials: "include" })
+    fetch(`${API_BASE}/api/streaks`, { credentials: "include" })
       .then((r) => r.json()).then(setStreaks).catch(console.error).finally(() => setStreakLoading(false));
-  }, [streakReward, streakFrom, streakTo]);
+  }, []);
 
   // ── Points leaderboard fetch ────────────────────────────────────────────────
   useEffect(() => {
@@ -368,13 +362,8 @@ export default function Dashboard() {
 
       } else if (msg.type === "stream_offline") {
         setStreamStatus({ live: false });
-        if (streakReward) {
-          const params = new URLSearchParams({ reward_title: streakReward });
-          if (streakFrom) params.set("from_date", streakFrom);
-          if (streakTo)   params.set("to_date",   streakTo);
-          fetch(`${API_BASE}/api/streaks?${params}`, { credentials: "include" })
-            .then((r) => r.json()).then(setStreaks).catch(console.error);
-        }
+        fetch(`${API_BASE}/api/streaks`, { credentials: "include" })
+          .then((r) => r.json()).then(setStreaks).catch(console.error);
       }
     };
 
@@ -417,9 +406,8 @@ export default function Dashboard() {
   }
 
   // ── Streak reward config ────────────────────────────────────────────────────
-  function handleStreakRewardChange(title: string) {
-    if (!title || title === streakReward) return;
-    setPendingStreakReward(title);
+  function openStreakConfig() {
+    setPendingStreakReward(streakReward);
     setConfirmDialogOpen(true);
   }
 
@@ -594,12 +582,23 @@ export default function Dashboard() {
 
         {/* Watch Streaks */}
         <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
             <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Watch Streaks</h2>
-            <RewardDropdown value={streakReward} options={rewards} onChange={handleStreakRewardChange} />
-          </div>
-          <div style={{ marginBottom: "10px" }}>
-            <DateRangeFilter from={streakFrom} to={streakTo} onFromChange={setStreakFrom} onToChange={setStreakTo} />
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              {streakReward && (
+                <span style={{ fontSize: "11px", color: "#a090c0", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {streakReward}
+                </span>
+              )}
+              <button
+                onClick={openStreakConfig}
+                style={{
+                  padding: "4px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "11px",
+                  background: "rgba(139,123,255,0.12)", border: "1px solid rgba(139,123,255,0.3)",
+                  color: "#c5bcff", fontWeight: 600,
+                }}
+              >Configure</button>
+            </div>
           </div>
           {streakLoading ? (
             <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>Loading...</p>
@@ -792,15 +791,33 @@ export default function Dashboard() {
         }}>
           <div style={{
             background: "#1a1330", border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: "12px", padding: "24px 28px", maxWidth: "380px", width: "90%",
+            borderRadius: "12px", padding: "24px 28px", maxWidth: "400px", width: "90%",
           }}>
             <h3 style={{ margin: "0 0 10px", fontSize: "15px", fontWeight: 700, color: "#f4ecff" }}>
-              Set check-in reward?
+              Configure check-in reward
             </h3>
-            <p style={{ margin: "0 0 20px", fontSize: "13px", color: "#a090c0", lineHeight: 1.5 }}>
-              <span style={{ color: "#c5bcff", fontWeight: 600 }}>"{pendingStreakReward}"</span> will be
-              set as your daily check-in / watch streak reward. Only this redemption will count toward viewer streaks.
+
+            {streamStatus.live && (
+              <div style={{
+                margin: "0 0 14px", padding: "8px 12px", borderRadius: "7px",
+                background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)",
+              }}>
+                <p style={{ margin: 0, fontSize: "12px", color: "#ff8f8f", fontWeight: 600 }}>
+                  ⚠ You are currently live. Changing this reward mid-stream may affect your viewers' watch streaks.
+                </p>
+              </div>
+            )}
+
+            <p style={{ margin: "0 0 12px", fontSize: "12px", color: "#a090c0", lineHeight: 1.5 }}>
+              Only this redemption will count toward viewer streaks. Streaks are global — changing this reward will not reset existing streaks.
             </p>
+            <div style={{ marginBottom: "20px" }}>
+              <RewardDropdown
+                value={pendingStreakReward ?? ""}
+                options={rewards}
+                onChange={(v) => setPendingStreakReward(v || null)}
+              />
+            </div>
             <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
               <button
                 onClick={cancelStreakReward}

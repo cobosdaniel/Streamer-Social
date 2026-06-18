@@ -174,12 +174,11 @@ async def get_leaderboard(
 @limiter.limit("60/minute")
 async def get_streaks(
     request: Request,
-    reward_title: str,
     from_date: str | None = None,
     to_date:   str | None = None,
     user_id: str = Depends(get_current_user),
 ):
-    rows = get_viewer_streaks(user_id, reward_title, limit=20, from_date=from_date, to_date=to_date)
+    rows = get_viewer_streaks(user_id, limit=20, from_date=from_date, to_date=to_date)
 
     return [
         {
