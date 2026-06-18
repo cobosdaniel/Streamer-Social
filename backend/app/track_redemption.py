@@ -11,6 +11,7 @@ from db import (
     end_stream_session,
     settle_streaks_for_session,
     get_streak_schedule,
+    refresh_access_token,
 )
 
 
@@ -64,48 +65,13 @@ def subscribe(ws_session_id, broadcaster_id, access_token, client_id):
 
         if res.status_code == 401:
             print("Token expired, refreshing...")
-            new_token = refresh_access_token_db(broadcaster_id)
+            new_token = refresh_access_token(broadcaster_id)
             if not new_token:
                 continue
             headers["Authorization"] = f"Bearer {new_token}"
             res = requests.post(url, headers=headers, json=sub)
 
         print(f"Subscription [{sub['type']}]:", res.status_code, res.text)
-
-
-def refresh_access_token_db(twitch_user_id):
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("""
-        SELECT refresh_token FROM tokens WHERE twitch_user_id = %s
-    """, (twitch_user_id,))
-    row = cursor.fetchone()
-    if not row:
-        print("No refresh token found")
-        return None
-
-    refresh_token = row["refresh_token"]
-    res = requests.post("https://id.twitch.tv/oauth2/token", params={
-        "grant_type":    "refresh_token",
-        "refresh_token": refresh_token,
-        "client_id":     os.getenv("TWITCH_CLIENT_ID"),
-        "client_secret": os.getenv("TWITCH_CLIENT_SECRET"),
-    })
-
-    if res.status_code != 200:
-        print("Token refresh failed:", res.text)
-        return None
-
-    data = res.json()
-    cursor.execute("""
-        UPDATE tokens SET access_token = %s, refresh_token = %s
-        WHERE twitch_user_id = %s
-    """, (data["access_token"], data.get("refresh_token", refresh_token), twitch_user_id))
-    conn.commit()
-    cursor.close()
-    conn.close()
-    print("Token refreshed for", twitch_user_id)
-    return data["access_token"]
 
 
 # ── Schedule helpers ───────────────────────────────────────────────────────────

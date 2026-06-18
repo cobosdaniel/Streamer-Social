@@ -9,6 +9,7 @@ from db import (
     get_viewer_streaks,
     save_session, get_session, delete_session,
     get_user_token_data, load_all_user_tokens,
+    refresh_access_token,
 )
 import os
 import secrets
@@ -176,6 +177,20 @@ async def get_rewards(user_id: str = Depends(get_current_user)):
                 "Authorization": f"Bearer {access_token}",
             },
         )
+
+        if res.status_code == 401:
+            new_token = refresh_access_token(user_id)
+            if not new_token:
+                raise HTTPException(status_code=401, detail="Token expired and refresh failed")
+            user_tokens[user_id] = {**user_data, "access_token": new_token}
+            res = await client.get(
+                "https://api.twitch.tv/helix/channel_points/custom_rewards",
+                params={"broadcaster_id": user_id},
+                headers={
+                    "Client-ID": client_id,
+                    "Authorization": f"Bearer {new_token}",
+                },
+            )
 
     if res.status_code != 200:
         raise HTTPException(status_code=res.status_code, detail=res.text)

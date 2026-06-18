@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import requests
 import mysql.connector
 import mysql.connector.pooling
 from dotenv import load_dotenv
@@ -408,3 +409,44 @@ def load_all_user_tokens():
         }
         for r in rows
     }
+
+
+def refresh_access_token(twitch_user_id: str) -> str | None:
+    """Exchange the stored refresh_token for a new access_token and persist it."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT refresh_token FROM tokens WHERE twitch_user_id = %s",
+        (twitch_user_id,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        cursor.close()
+        conn.close()
+        return None
+
+    refresh_token = row["refresh_token"]
+    res = requests.post("https://id.twitch.tv/oauth2/token", params={
+        "grant_type":    "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id":     os.getenv("TWITCH_CLIENT_ID"),
+        "client_secret": os.getenv("TWITCH_CLIENT_SECRET"),
+    })
+
+    if res.status_code != 200:
+        cursor.close()
+        conn.close()
+        return None
+
+    data = res.json()
+    new_access  = data["access_token"]
+    new_refresh = data.get("refresh_token", refresh_token)
+
+    cursor.execute("""
+        UPDATE tokens SET access_token = %s, refresh_token = %s
+        WHERE twitch_user_id = %s
+    """, (new_access, new_refresh, twitch_user_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return new_access
