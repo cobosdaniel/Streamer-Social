@@ -235,8 +235,13 @@ async def update_schedule(
 # ── Auth ───────────────────────────────────────────────────────────────────────
 
 def build_auth_url(scopes: list[str]) -> str:
+    now = time.time()
+    expired = [k for k, v in pending_states.items() if now - v["created"] > 600]
+    for k in expired:
+        del pending_states[k]
+
     state = secrets.token_urlsafe(32)
-    pending_states[state] = {"created": time.time()}
+    pending_states[state] = {"created": now}
     scope_str = "%20".join(scopes)
     return (
         f"{AUTH_URL}?client_id={TWITCH_CLIENT_ID}"
