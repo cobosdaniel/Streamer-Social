@@ -196,8 +196,6 @@ export default function Dashboard() {
   const [streakReward,  setStreakReward]  = useState("");
   const [streaks,       setStreaks]       = useState<StreakEntry[]>([]);
   const [streakLoading, setStreakLoading] = useState(false);
-  const [streakFrom,    setStreakFrom]    = useState("");
-  const [streakTo,      setStreakTo]      = useState("");
 
   const [pendingStreakReward,   setPendingStreakReward]   = useState<string | null>(null);
   const [confirmDialogOpen,     setConfirmDialogOpen]     = useState(false);
@@ -414,12 +412,6 @@ export default function Dashboard() {
   }
 
   // ── Streak reward config ────────────────────────────────────────────────────
-  function handleStreakRewardChange(title: string) {
-    if (!title || title === streakReward) return;
-    setPendingStreakReward(title);
-    setConfirmDialogOpen(true);
-  }
-
   function openStreakConfig() {
     setPendingStreakReward(streakReward);
     setConfirmDialogOpen(true);
