@@ -32,6 +32,22 @@ type LeaderboardEntry = {
   count:     number;
 };
 
+type PointsEntry = {
+  user_name:     string;
+  total_points:  number;
+  count_1st:     number;
+  count_2nd:     number;
+  count_3rd:     number;
+  count_checkin: number;
+};
+
+type PointConfig = {
+  reward_1st: string | null;
+  reward_2nd: string | null;
+  reward_3rd: string | null;
+  checkin:    string | null;
+};
+
 type StreakEntry = {
   user_name:      string;
   streak:         number;
@@ -187,6 +203,15 @@ export default function Dashboard() {
   const [confirmDialogOpen,     setConfirmDialogOpen]     = useState(false);
   const [streakRewardSaving,    setStreakRewardSaving]    = useState(false);
 
+  const [pointsEntries,   setPointsEntries]   = useState<PointsEntry[]>([]);
+  const [pointsLoading,   setPointsLoading]   = useState(false);
+  const [pointsFrom,      setPointsFrom]      = useState("");
+  const [pointsTo,        setPointsTo]        = useState("");
+  const [pointConfig,     setPointConfig]     = useState<PointConfig>({ reward_1st: null, reward_2nd: null, reward_3rd: null, checkin: null });
+  const [pointConfigOpen, setPointConfigOpen] = useState(false);
+  const [pendingConfig,   setPendingConfig]   = useState<PointConfig>({ reward_1st: null, reward_2nd: null, reward_3rd: null, checkin: null });
+  const [pointConfigSaving, setPointConfigSaving] = useState(false);
+
   const [schedule,        setSchedule]        = useState<ScheduleDay[]>(DAYS.map((d) => ({ day: d, time: "" })));
   const [selectedDays,    setSelectedDays]     = useState<Set<string>>(new Set());
   const [scheduleLoading, setScheduleLoading]  = useState(false);
@@ -222,6 +247,16 @@ export default function Dashboard() {
         if (rewardData.length > 0) {
           setLbReward(rewardData[0].title);
         }
+
+        // Load point config
+        try {
+          const pcRes = await fetch(`${API_BASE}/api/point-config`, { credentials: "include" });
+          if (pcRes.ok) {
+            const pc = await pcRes.json();
+            setPointConfig(pc);
+            setPendingConfig(pc);
+          }
+        } catch { /* non-fatal */ }
 
         // Load the configured streak reward, fall back to first reward
         try {
@@ -286,6 +321,16 @@ export default function Dashboard() {
     fetch(`${API_BASE}/api/streaks?${params}`, { credentials: "include" })
       .then((r) => r.json()).then(setStreaks).catch(console.error).finally(() => setStreakLoading(false));
   }, [streakReward, streakFrom, streakTo]);
+
+  // ── Points leaderboard fetch ────────────────────────────────────────────────
+  useEffect(() => {
+    setPointsLoading(true);
+    const params = new URLSearchParams();
+    if (pointsFrom) params.set("from_date", pointsFrom);
+    if (pointsTo)   params.set("to_date",   pointsTo);
+    fetch(`${API_BASE}/api/points-leaderboard?${params}`, { credentials: "include" })
+      .then((r) => r.json()).then(setPointsEntries).catch(console.error).finally(() => setPointsLoading(false));
+  }, [pointsFrom, pointsTo, pointConfig]);
 
   // ── WebSocket ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -402,6 +447,28 @@ export default function Dashboard() {
     setPendingStreakReward(null);
   }
 
+  // ── Point config ────────────────────────────────────────────────────────────
+  async function savePointConfig() {
+    setPointConfigSaving(true);
+    try {
+      await fetch(`${API_BASE}/api/point-config`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reward_1st: pendingConfig.reward_1st,
+          reward_2nd: pendingConfig.reward_2nd,
+          reward_3rd: pendingConfig.reward_3rd,
+        }),
+      });
+      setPointConfig(pendingConfig);
+      setPointConfigOpen(false);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setPointConfigSaving(false);
+    }
+  }
+
   // ── Early returns ───────────────────────────────────────────────────────────
   if (loading) return <main style={{ padding: "40px 20px" }}><p>Loading dashboard...</p></main>;
   if (error) return (
@@ -434,13 +501,66 @@ export default function Dashboard() {
         {streamStatus.live && <LiveBadge />}
       </div>
 
-      {/* Top row — Leaderboard + Streaks */}
+      {/* Leaderboard (points) — full width */}
+      <section className="section-card" style={{ margin: "0 0 16px", padding: "16px 18px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+          <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Leaderboard</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <DateRangeFilter from={pointsFrom} to={pointsTo} onFromChange={setPointsFrom} onToChange={setPointsTo} />
+            <button
+              onClick={() => { setPendingConfig(pointConfig); setPointConfigOpen(true); }}
+              style={{
+                padding: "4px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "11px",
+                background: "rgba(139,123,255,0.12)", border: "1px solid rgba(139,123,255,0.3)",
+                color: "#c5bcff", fontWeight: 600,
+              }}
+            >Configure</button>
+          </div>
+        </div>
+
+        {pointsLoading ? (
+          <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>Loading...</p>
+        ) : pointsEntries.length === 0 ? (
+          <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>
+            {pointConfig.reward_1st || pointConfig.reward_2nd || pointConfig.reward_3rd || pointConfig.checkin
+              ? "No points earned yet."
+              : "Configure rewards to start tracking points."}
+          </p>
+        ) : (
+          <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "4px" }}>
+            {pointsEntries.map((entry, i) => {
+              const rank  = i + 1;
+              const color = medalColors[rank] ?? "#8b7bff";
+              const label = medalLabel[rank]  ?? `#${rank}`;
+              return (
+                <li key={entry.user_name} style={{
+                  display: "flex", alignItems: "center", gap: "8px",
+                  padding: "5px 8px", borderRadius: "7px",
+                  background: rank <= 3 ? `${color}12` : "transparent",
+                }}>
+                  <span style={{ width: "28px", fontSize: "11px", fontWeight: 700, color, flexShrink: 0 }}>{label}</span>
+                  <span style={{ flex: 1, fontSize: "13px", fontWeight: 600, color: "#f4ecff" }}>{entry.user_name}</span>
+                  <span style={{ fontSize: "13px", fontWeight: 700, color }}>{entry.total_points}pts</span>
+                  <span style={{ fontSize: "11px", color: "#6a5c80", display: "flex", gap: "8px" }}>
+                    {entry.count_1st     > 0 && <span title="1st place">🥇×{entry.count_1st}</span>}
+                    {entry.count_2nd     > 0 && <span title="2nd place">🥈×{entry.count_2nd}</span>}
+                    {entry.count_3rd     > 0 && <span title="3rd place">🥉×{entry.count_3rd}</span>}
+                    {entry.count_checkin > 0 && <span title="Check-ins">✓×{entry.count_checkin}</span>}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </section>
+
+      {/* Middle row — Redemption Tracker + Watch Streaks */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
 
-        {/* Leaderboard */}
+        {/* Redemption Tracker */}
         <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-            <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Leaderboard</h2>
+            <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Redemption Tracker</h2>
             <RewardDropdown value={lbReward} options={rewards} onChange={setLbReward} />
           </div>
           <div style={{ marginBottom: "10px" }}>
@@ -477,6 +597,9 @@ export default function Dashboard() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
             <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Watch Streaks</h2>
             <RewardDropdown value={streakReward} options={rewards} onChange={handleStreakRewardChange} />
+          </div>
+          <div style={{ marginBottom: "10px" }}>
+            <DateRangeFilter from={streakFrom} to={streakTo} onFromChange={setStreakFrom} onToChange={setStreakTo} />
           </div>
           {streakLoading ? (
             <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>Loading...</p>
@@ -603,6 +726,64 @@ export default function Dashboard() {
           </div>
         )}
       </section>
+      {/* Point config dialog */}
+      {pointConfigOpen && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+        }}>
+          <div style={{
+            background: "#1a1330", border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: "12px", padding: "24px 28px", maxWidth: "420px", width: "90%",
+          }}>
+            <h3 style={{ margin: "0 0 6px", fontSize: "15px", fontWeight: 700, color: "#f4ecff" }}>
+              Configure Leaderboard Rewards
+            </h3>
+            <p style={{ margin: "0 0 18px", fontSize: "12px", color: "#6a5c80" }}>
+              Assign your channel point rewards to each placement. Check-in uses the reward configured in Watch Streaks.
+            </p>
+            {(["reward_1st", "reward_2nd", "reward_3rd"] as const).map((key, i) => {
+              const labels = ["🥇 1st Place (3 pts)", "🥈 2nd Place (2 pts)", "🥉 3rd Place (1 pt)"];
+              return (
+                <div key={key} style={{ marginBottom: "12px" }}>
+                  <p style={{ margin: "0 0 4px", fontSize: "12px", fontWeight: 600, color: "#c5bcff" }}>{labels[i]}</p>
+                  <RewardDropdown
+                    value={pendingConfig[key] ?? ""}
+                    options={rewards}
+                    onChange={(v) => setPendingConfig((prev) => ({ ...prev, [key]: v || null }))}
+                  />
+                </div>
+              );
+            })}
+            <div style={{ marginTop: "4px", padding: "10px", borderRadius: "7px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <p style={{ margin: 0, fontSize: "12px", color: "#6a5c80" }}>
+                ✓ Check-in (1 pt): <span style={{ color: "#c5bcff" }}>{pointConfig.checkin ?? "not configured"}</span>
+                {!pointConfig.checkin && <span> — set in Watch Streaks</span>}
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "20px" }}>
+              <button
+                onClick={() => setPointConfigOpen(false)}
+                style={{
+                  padding: "6px 16px", borderRadius: "7px", cursor: "pointer",
+                  background: "transparent", border: "1px solid rgba(255,255,255,0.12)",
+                  color: "#a090c0", fontSize: "13px", fontWeight: 600,
+                }}
+              >Cancel</button>
+              <button
+                onClick={savePointConfig}
+                disabled={pointConfigSaving}
+                style={{
+                  padding: "6px 16px", borderRadius: "7px", cursor: "pointer",
+                  background: "rgba(139,123,255,0.2)", border: "1px solid #8b7bff",
+                  color: "#c5bcff", fontSize: "13px", fontWeight: 600,
+                }}
+              >{pointConfigSaving ? "Saving..." : "Save"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Confirm streak reward dialog */}
       {confirmDialogOpen && (
         <div style={{
