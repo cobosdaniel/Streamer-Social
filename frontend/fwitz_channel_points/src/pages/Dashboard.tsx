@@ -312,12 +312,9 @@ export default function Dashboard() {
   // ── Streaks fetch ───────────────────────────────────────────────────────────
   useEffect(() => {
     setStreakLoading(true);
-    const params = new URLSearchParams();
-    if (streakFrom) params.set("from_date", streakFrom);
-    if (streakTo)   params.set("to_date",   streakTo);
-    fetch(`${API_BASE}/api/streaks?${params}`, { credentials: "include" })
+    fetch(`${API_BASE}/api/streaks`, { credentials: "include" })
       .then((r) => r.json()).then(setStreaks).catch(console.error).finally(() => setStreakLoading(false));
-  }, [streakFrom, streakTo]);
+  }, []);
 
   // ── Points leaderboard fetch ────────────────────────────────────────────────
   useEffect(() => {
@@ -365,10 +362,7 @@ export default function Dashboard() {
 
       } else if (msg.type === "stream_offline") {
         setStreamStatus({ live: false });
-        const params = new URLSearchParams();
-        if (streakFrom) params.set("from_date", streakFrom);
-        if (streakTo)   params.set("to_date",   streakTo);
-        fetch(`${API_BASE}/api/streaks?${params}`, { credentials: "include" })
+        fetch(`${API_BASE}/api/streaks`, { credentials: "include" })
           .then((r) => r.json()).then(setStreaks).catch(console.error);
       }
     };
