@@ -230,7 +230,7 @@ async def get_rewards(request: Request, user_id: str = Depends(get_current_user)
     if res.status_code != 200:
         raise HTTPException(status_code=res.status_code, detail=res.text)
 
-    data = res.json().get("data", [])
+    data = sorted(res.json().get("data", []), key=lambda r: r["title"].lower())
 
     return [
         {
