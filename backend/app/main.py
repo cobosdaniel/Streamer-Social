@@ -14,6 +14,7 @@ from db import (
     get_user_token_data, load_all_user_tokens,
     refresh_access_token,
     get_streak_reward, save_streak_reward,
+    get_point_config, save_point_config, get_points_leaderboard,
 )
 import os
 import logging
@@ -251,6 +252,51 @@ class ScheduleDay(BaseModel):
 
 class StreakSchedulePayload(BaseModel):
     scheduled_days: list[ScheduleDay]
+
+@app.get("/api/point-config")
+@limiter.limit("60/minute")
+async def get_point_config_endpoint(request: Request, user_id: str = Depends(get_current_user)):
+    return get_point_config(user_id)
+
+
+class PointConfigPayload(BaseModel):
+    reward_1st: Optional[str] = None
+    reward_2nd: Optional[str] = None
+    reward_3rd: Optional[str] = None
+
+
+@app.post("/api/point-config")
+@limiter.limit("20/minute")
+async def set_point_config_endpoint(
+    request: Request,
+    payload: PointConfigPayload,
+    user_id: str = Depends(get_current_user),
+):
+    save_point_config(user_id, payload.reward_1st, payload.reward_2nd, payload.reward_3rd)
+    return {"ok": True}
+
+
+@app.get("/api/points-leaderboard")
+@limiter.limit("60/minute")
+async def points_leaderboard_endpoint(
+    request: Request,
+    from_date: str | None = None,
+    to_date:   str | None = None,
+    user_id: str = Depends(get_current_user),
+):
+    rows = get_points_leaderboard(user_id, from_date=from_date, to_date=to_date)
+    return [
+        {
+            "user_name":     r["user_name"],
+            "total_points":  float(r["total_points"]),
+            "count_1st":     int(r["count_1st"]),
+            "count_2nd":     int(r["count_2nd"]),
+            "count_3rd":     int(r["count_3rd"]),
+            "count_checkin": int(r["count_checkin"]),
+        }
+        for r in rows
+    ]
+
 
 @app.get("/api/streak-reward")
 @limiter.limit("60/minute")

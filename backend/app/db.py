@@ -345,6 +345,146 @@ def _ensure_streak_reward_column():
 _ensure_streak_reward_column()
 
 
+def _ensure_point_reward_columns():
+    conn = get_connection()
+    cursor = conn.cursor()
+    for col in ("reward_1st", "reward_2nd", "reward_3rd"):
+        cursor.execute("""
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME   = 'streak_schedules'
+              AND COLUMN_NAME  = %s
+        """, (col,))
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(f"""
+                ALTER TABLE streak_schedules
+                ADD COLUMN {col} VARCHAR(255) DEFAULT NULL
+            """)
+            conn.commit()
+    cursor.close()
+    conn.close()
+
+_ensure_point_reward_columns()
+
+
+def get_point_config(twitch_user_id: str) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT reward_1st, reward_2nd, reward_3rd, reward_title AS checkin
+        FROM streak_schedules WHERE twitch_user_id = %s
+    """, (twitch_user_id,))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    if not row:
+        return {"reward_1st": None, "reward_2nd": None, "reward_3rd": None, "checkin": None}
+    return row
+
+
+def save_point_config(twitch_user_id: str, reward_1st: str | None, reward_2nd: str | None, reward_3rd: str | None):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO streak_schedules (twitch_user_id, scheduled_days, reward_1st, reward_2nd, reward_3rd)
+        VALUES (%s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            reward_1st = VALUES(reward_1st),
+            reward_2nd = VALUES(reward_2nd),
+            reward_3rd = VALUES(reward_3rd),
+            updated_at = CURRENT_TIMESTAMP
+    """, (twitch_user_id, json.dumps([]), reward_1st, reward_2nd, reward_3rd))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+def get_points_leaderboard(twitch_user_id: str, from_date: str | None = None, to_date: str | None = None) -> list:
+    config = get_point_config(twitch_user_id)
+    reward_1st = config["reward_1st"]
+    reward_2nd = config["reward_2nd"]
+    reward_3rd = config["reward_3rd"]
+    checkin    = config["checkin"]
+
+    if not any([reward_1st, reward_2nd, reward_3rd, checkin]):
+        return []
+
+    date_filter = ""
+    date_params: list = []
+    if from_date:
+        date_filter += " AND redeemed_at >= %s"
+        date_params.append(from_date)
+    if to_date:
+        date_filter += " AND redeemed_at < DATE_ADD(%s, INTERVAL 1 DAY)"
+        date_params.append(to_date)
+
+    unions = []
+    params: list = []
+
+    for reward, points in [(reward_1st, 3), (reward_2nd, 2), (reward_3rd, 1), (checkin, 1)]:
+        if reward:
+            unions.append(f"""
+                SELECT user_name, {points} AS points
+                FROM redemptions
+                WHERE twitch_user_id = %s AND reward_title = %s{date_filter}
+            """)
+            params += [twitch_user_id, reward] + date_params
+
+    if not unions:
+        return []
+
+    query = f"""
+        SELECT user_name, SUM(points) AS total_points,
+               SUM(CASE WHEN reward_title_tag = '1st' THEN cnt ELSE 0 END) AS pts_1st,
+               SUM(CASE WHEN reward_title_tag = '2nd' THEN cnt ELSE 0 END) AS pts_2nd,
+               SUM(CASE WHEN reward_title_tag = '3rd' THEN cnt ELSE 0 END) AS pts_3rd,
+               SUM(CASE WHEN reward_title_tag = 'checkin' THEN cnt ELSE 0 END) AS pts_checkin
+        FROM (
+            {" UNION ALL ".join(unions)}
+        ) sub
+        GROUP BY user_name
+        ORDER BY total_points DESC
+        LIMIT 20
+    """
+
+    # Rebuild with breakdown tags
+    unions2 = []
+    params2: list = []
+    for reward, points, tag in [
+        (reward_1st, 3, "1st"), (reward_2nd, 2, "2nd"),
+        (reward_3rd, 1, "3rd"), (checkin, 1, "checkin"),
+    ]:
+        if reward:
+            unions2.append(f"""
+                SELECT user_name, '{tag}' AS reward_title_tag, COUNT(*) AS cnt, COUNT(*) * {points} AS points
+                FROM redemptions
+                WHERE twitch_user_id = %s AND reward_title = %s{date_filter}
+                GROUP BY user_name
+            """)
+            params2 += [twitch_user_id, reward] + date_params
+
+    query2 = f"""
+        SELECT user_name,
+               SUM(points) AS total_points,
+               SUM(CASE WHEN reward_title_tag = '1st'     THEN cnt ELSE 0 END) AS count_1st,
+               SUM(CASE WHEN reward_title_tag = '2nd'     THEN cnt ELSE 0 END) AS count_2nd,
+               SUM(CASE WHEN reward_title_tag = '3rd'     THEN cnt ELSE 0 END) AS count_3rd,
+               SUM(CASE WHEN reward_title_tag = 'checkin' THEN cnt ELSE 0 END) AS count_checkin
+        FROM ({" UNION ALL ".join(unions2)}) sub
+        GROUP BY user_name
+        ORDER BY total_points DESC
+        LIMIT 20
+    """
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(query2, params2)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
+
+
 def get_streak_reward(twitch_user_id: str) -> str | None:
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
