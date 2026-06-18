@@ -138,17 +138,29 @@ async def get_redemptions(request: Request, user_id: str = Depends(get_current_u
 
 @app.get("/api/leaderboard")
 @limiter.limit("60/minute")
-async def get_leaderboard(request: Request, reward_title: str, user_id: str = Depends(get_current_user)):
+async def get_leaderboard(
+    request: Request,
+    reward_title: str,
+    from_date: str | None = None,
+    to_date:   str | None = None,
+    user_id: str = Depends(get_current_user),
+):
     conn   = get_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("""
-        SELECT user_name, COUNT(*) AS count
-        FROM redemptions
-        WHERE twitch_user_id = %s AND reward_title = %s
-        GROUP BY user_name
-        ORDER BY count DESC
-        LIMIT 20
-    """, (user_id, reward_title))
+
+    query  = "SELECT user_name, COUNT(*) AS count FROM redemptions WHERE twitch_user_id = %s AND reward_title = %s"
+    params: list = [user_id, reward_title]
+
+    if from_date:
+        query += " AND redeemed_at >= %s"
+        params.append(from_date)
+    if to_date:
+        query += " AND redeemed_at < DATE_ADD(%s, INTERVAL 1 DAY)"
+        params.append(to_date)
+
+    query += " GROUP BY user_name ORDER BY count DESC LIMIT 20"
+
+    cursor.execute(query, params)
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -159,13 +171,14 @@ async def get_leaderboard(request: Request, reward_title: str, user_id: str = De
 
 @app.get("/api/streaks")
 @limiter.limit("60/minute")
-async def get_streaks(request: Request, reward_title: str, user_id: str = Depends(get_current_user)):
-    """
-    Returns pre-computed streaks from viewer_streaks.
-    Streaks are settled incrementally in track_redemption.py when each
-    stream session closes — this endpoint is just a single SELECT.
-    """
-    rows = get_viewer_streaks(user_id, reward_title, limit=20)
+async def get_streaks(
+    request: Request,
+    reward_title: str,
+    from_date: str | None = None,
+    to_date:   str | None = None,
+    user_id: str = Depends(get_current_user),
+):
+    rows = get_viewer_streaks(user_id, reward_title, limit=20, from_date=from_date, to_date=to_date)
 
     return [
         {

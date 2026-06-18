@@ -259,24 +259,31 @@ def settle_streaks_for_session(session):
         conn.close()
 
 
-def get_viewer_streaks(twitch_user_id, reward_title, limit=20):
+def get_viewer_streaks(twitch_user_id, reward_title, limit=20, from_date=None, to_date=None):
     """Fast single-query fetch from the cached viewer_streaks table."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("""
-        SELECT
-            user_name,
-            current_streak,
-            longest_streak,
-            last_session_id,
-            updated_at
+
+    query  = """
+        SELECT user_name, current_streak, longest_streak, last_session_id, updated_at
         FROM viewer_streaks
         WHERE twitch_user_id = %s
           AND reward_title = %s
           AND current_streak > 0
-        ORDER BY current_streak DESC, longest_streak DESC
-        LIMIT %s
-    """, (twitch_user_id, reward_title, limit))
+    """
+    params: list = [twitch_user_id, reward_title]
+
+    if from_date:
+        query += " AND updated_at >= %s"
+        params.append(from_date)
+    if to_date:
+        query += " AND updated_at < DATE_ADD(%s, INTERVAL 1 DAY)"
+        params.append(to_date)
+
+    query += " ORDER BY current_streak DESC, longest_streak DESC LIMIT %s"
+    params.append(limit)
+
+    cursor.execute(query, params)
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
