@@ -1,4 +1,5 @@
 import os
+import time
 import json
 import mysql.connector
 import mysql.connector.pooling
@@ -300,3 +301,110 @@ def save_streak_schedule(twitch_user_id, scheduled_days):
     conn.commit()
     cursor.close()
     conn.close()
+
+
+# ── Sessions ───────────────────────────────────────────────────────────────────
+
+def _ensure_sessions_table():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            session_token VARCHAR(64) PRIMARY KEY,
+            twitch_user_id VARCHAR(64) NOT NULL,
+            created_at BIGINT NOT NULL,
+            INDEX idx_sessions_user (twitch_user_id)
+        )
+    """)
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+_ensure_sessions_table()
+
+
+def save_session(session_token, twitch_user_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO sessions (session_token, twitch_user_id, created_at)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE created_at = VALUES(created_at)
+    """, (session_token, twitch_user_id, int(time.time())))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+def get_session(session_token):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT twitch_user_id, created_at FROM sessions WHERE session_token = %s",
+        (session_token,),
+    )
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return row
+
+
+def delete_session(session_token):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM sessions WHERE session_token = %s", (session_token,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+# ── Token cache helpers ────────────────────────────────────────────────────────
+
+def get_user_token_data(twitch_user_id):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT t.access_token, t.refresh_token, t.expires_in, t.scopes,
+               s.client_id, s.login
+        FROM tokens t
+        JOIN streamers s ON t.twitch_user_id = s.twitch_user_id
+        WHERE t.twitch_user_id = %s
+    """, (twitch_user_id,))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    if not row:
+        return None
+    return {
+        "access_token":  row["access_token"],
+        "refresh_token": row["refresh_token"],
+        "expires_in":    row["expires_in"],
+        "scopes":        row["scopes"].split(",") if row["scopes"] else [],
+        "client_id":     row["client_id"],
+        "login":         row["login"],
+    }
+
+
+def load_all_user_tokens():
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT t.twitch_user_id, t.access_token, t.refresh_token, t.expires_in, t.scopes,
+               s.client_id, s.login
+        FROM tokens t
+        JOIN streamers s ON t.twitch_user_id = s.twitch_user_id
+    """)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return {
+        r["twitch_user_id"]: {
+            "access_token":  r["access_token"],
+            "refresh_token": r["refresh_token"],
+            "expires_in":    r["expires_in"],
+            "scopes":        r["scopes"].split(",") if r["scopes"] else [],
+            "client_id":     r["client_id"],
+            "login":         r["login"],
+        }
+        for r in rows
+    }
