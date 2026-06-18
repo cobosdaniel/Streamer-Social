@@ -19,7 +19,7 @@ import secrets
 import time
 from dotenv import load_dotenv
 import httpx
-from tracker_manager import start_tracker
+from tracker_manager import start_tracker, stop_all_trackers
 from typing import Optional
 
 load_dotenv("user_oauth.env")
@@ -423,3 +423,8 @@ def startup_event():
     conn.close()
     for s in streamers:
         start_tracker(s)
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    stop_all_trackers(timeout=10)

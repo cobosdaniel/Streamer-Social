@@ -128,7 +128,7 @@ def classify_session(broadcaster_id, started_at: datetime):
 
 # ── Main tracker ───────────────────────────────────────────────────────────────
 
-def run_tracker_for_streamer(streamer):
+def run_tracker_for_streamer(streamer, shutdown_event=None):
     broadcaster_id = streamer["twitch_user_id"]
     access_token   = streamer["access_token"]
     client_id      = streamer["client_id"]
@@ -239,7 +239,7 @@ def run_tracker_for_streamer(streamer):
 
     import time
     backoff = 5
-    while True:
+    while not (shutdown_event and shutdown_event.is_set()):
         try:
             print(f"Starting WS for {broadcaster_id}")
             ws = websocket.WebSocketApp(
@@ -251,6 +251,9 @@ def run_tracker_for_streamer(streamer):
             backoff = 5  # reset after a clean disconnect
         except Exception as e:
             print("Websocket crashed:", e)
+
+        if shutdown_event and shutdown_event.is_set():
+            break
 
         print(f"Reconnecting in {backoff} seconds...")
         time.sleep(backoff)
