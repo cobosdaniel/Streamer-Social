@@ -311,20 +311,22 @@ export default function Dashboard() {
 
   // ── Streaks fetch ───────────────────────────────────────────────────────────
   useEffect(() => {
+    if (loading) return;
     setStreakLoading(true);
     fetch(`${API_BASE}/api/streaks`, { credentials: "include" })
-      .then((r) => r.json()).then(setStreaks).catch(console.error).finally(() => setStreakLoading(false));
-  }, []);
+      .then((r) => r.ok ? r.json() : []).then(setStreaks).catch(console.error).finally(() => setStreakLoading(false));
+  }, [loading]);
 
   // ── Points leaderboard fetch ────────────────────────────────────────────────
   useEffect(() => {
+    if (loading) return;
     setPointsLoading(true);
     const params = new URLSearchParams();
     if (pointsFrom) params.set("from_date", pointsFrom);
     if (pointsTo)   params.set("to_date",   pointsTo);
     fetch(`${API_BASE}/api/points-leaderboard?${params}`, { credentials: "include" })
-      .then((r) => r.json()).then(setPointsEntries).catch(console.error).finally(() => setPointsLoading(false));
-  }, [pointsFrom, pointsTo, pointConfig]);
+      .then((r) => r.ok ? r.json() : []).then(setPointsEntries).catch(console.error).finally(() => setPointsLoading(false));
+  }, [loading, pointsFrom, pointsTo, pointConfig]);
 
   // ── WebSocket ───────────────────────────────────────────────────────────────
   useEffect(() => {
