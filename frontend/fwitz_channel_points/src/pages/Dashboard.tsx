@@ -527,9 +527,7 @@ export default function Dashboard() {
       {/* Page header */}
       <Stack
         direction="row"
-        alignItems="flex-start"
-        justifyContent="space-between"
-        sx={{ mb: 3, pb: 2.5, borderBottom: "1px solid rgba(255,255,255,0.07)" }}
+        sx={{ mb: 3, pb: 2.5, borderBottom: "1px solid rgba(255,255,255,0.07)", alignItems: "flex-start", justifyContent: "space-between" }}
       >
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 700, color: "#f4ecff", fontSize: { xs: "22px", sm: "28px" } }}>
@@ -619,7 +617,7 @@ export default function Dashboard() {
                         primary: { sx: { fontSize: "14px", fontWeight: 600, color: "#f4ecff" } },
                       }}
                     />
-                    <Stack direction="row" alignItems="center" spacing={1.5}>
+                    <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
                       <Typography sx={{ fontSize: "11px", color: "#6a5c80", display: "flex", gap: 1 }}>
                         {entry.count_1st     > 0 && <span title="1st place">🥇×{entry.count_1st}</span>}
                         {entry.count_2nd     > 0 && <span title="2nd place">🥈×{entry.count_2nd}</span>}
@@ -742,7 +740,7 @@ export default function Dashboard() {
                           primary: { sx: { fontSize: "14px", fontWeight: 600, color: "#f4ecff" } },
                         }}
                       />
-                      <Stack direction="row" alignItems="center" spacing={1.5}>
+                      <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
                         <Typography sx={{ fontSize: "13px", fontWeight: 700, color: streakColor }}>
                           {entry.streak}s
                         </Typography>
@@ -815,7 +813,7 @@ export default function Dashboard() {
                   {DAYS.filter((d) => selectedDays.has(d)).map((day) => {
                     const entry = schedule.find((s) => s.day === day);
                     return (
-                      <Stack key={day} direction="row" alignItems="center" spacing={0.75}>
+                      <Stack key={day} direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
                         <Typography sx={{ fontSize: "12px", fontWeight: 600, color: "#c5bcff", width: 28 }}>
                           {day}
                         </Typography>
