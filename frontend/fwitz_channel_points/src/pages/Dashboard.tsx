@@ -781,7 +781,7 @@ export default function Dashboard() {
             }
           >
             <Stack spacing={1.5}>
-              <Stack direction="row" flexWrap="wrap" gap={1}>
+              <Stack direction="row" sx={{ flexWrap: "wrap", gap: 1 }}>
                 {DAYS.map((day) => {
                   const active = selectedDays.has(day);
                   return (
@@ -809,7 +809,7 @@ export default function Dashboard() {
               </Stack>
 
               {DAYS.filter((d) => selectedDays.has(d)).length > 0 && (
-                <Stack direction="row" flexWrap="wrap" gap={1.5} sx={{ pt: 0.5 }}>
+                <Stack direction="row" sx={{ flexWrap: "wrap", gap: 1.5, pt: 0.5 }}>
                   {DAYS.filter((d) => selectedDays.has(d)).map((day) => {
                     const entry = schedule.find((s) => s.day === day);
                     return (
