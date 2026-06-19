@@ -1,7 +1,22 @@
 import { useEffect, useState, useRef } from "react";
 import Autocomplete from "@mui/material/Autocomplete";
 import TextField from "@mui/material/TextField";
-
+import Box from "@mui/material/Box";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+import Paper from "@mui/material/Paper";
+import Divider from "@mui/material/Divider";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import List from "@mui/material/List";
+import ListItem from "@mui/material/ListItem";
+import ListItemText from "@mui/material/ListItemText";
+import CircularProgress from "@mui/material/CircularProgress";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogActions from "@mui/material/DialogActions";
+import Alert from "@mui/material/Alert";
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -33,7 +48,7 @@ type LeaderboardEntry = {
 };
 
 type PointsEntry = {
-  user_name:     string;
+  user_name: string;
   total_points:  number;
   count_1st:     number;
   count_2nd:     number;
@@ -68,19 +83,46 @@ type StreamStatus = {
   scheduled_day?: string | null;
 };
 
-function LiveBadge() {
+// Shared card styles matching CRUD template structure with our color scheme
+const cardSx = {
+  background: "rgba(21, 18, 40, 0.75)",
+  border: "1px solid rgba(255,255,255,0.07)",
+  backdropFilter: "blur(12px)",
+  borderRadius: "12px",
+  overflow: "hidden",
+};
+
+const cardHeaderSx = {
+  px: 2.5,
+  py: 1.75,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  minHeight: 56,
+};
+
+function SectionCard({
+  title,
+  action,
+  children,
+  sx = {},
+}: {
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  sx?: object;
+}) {
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: "6px",
-      background: "#ff4040", color: "#fff", fontWeight: 700,
-      fontSize: "12px", padding: "3px 10px", borderRadius: "20px",
-    }}>
-      <span style={{
-        width: "7px", height: "7px", borderRadius: "50%",
-        background: "#fff", animation: "pulse 1.2s infinite",
-      }} />
-      LIVE
-    </span>
+    <Paper elevation={0} sx={{ ...cardSx, ...sx }}>
+      <Box sx={cardHeaderSx}>
+        <Typography variant="h6" sx={{ fontWeight: 600, color: "#f4ecff", fontSize: "15px" }}>
+          {title}
+        </Typography>
+        {action && <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>{action}</Box>}
+      </Box>
+      <Divider sx={{ borderColor: "rgba(255,255,255,0.07)" }} />
+      <Box sx={{ p: 2.5 }}>{children}</Box>
+    </Paper>
   );
 }
 
@@ -100,14 +142,14 @@ function DateRangeFilter({
     "& input::-webkit-calendar-picker-indicator": { filter: "invert(0.7)" },
   };
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
       <TextField
         size="small" type="date" value={from}
         onChange={(e) => onFromChange(e.target.value)}
         slotProps={{ htmlInput: { max: to || undefined } }}
         sx={inputSx}
       />
-      <span style={{ color: "#6a5c80", fontSize: "11px" }}>–</span>
+      <Typography sx={{ color: "#6a5c80", fontSize: "11px" }}>–</Typography>
       <TextField
         size="small" type="date" value={to}
         onChange={(e) => onToChange(e.target.value)}
@@ -115,16 +157,13 @@ function DateRangeFilter({
         sx={inputSx}
       />
       {(from || to) && (
-        <button
+        <Button
+          size="small"
           onClick={() => { onFromChange(""); onToChange(""); }}
-          style={{
-            background: "none", border: "none", cursor: "pointer",
-            color: "#6a5c80", fontSize: "16px", lineHeight: 1, padding: "0 2px",
-          }}
-          title="Clear dates"
-        >×</button>
+          sx={{ minWidth: 0, p: "2px 6px", color: "#6a5c80", fontSize: "16px", lineHeight: 1 }}
+        >×</Button>
       )}
-    </div>
+    </Box>
   );
 }
 
@@ -164,15 +203,17 @@ function RewardDropdown({
         },
       }}
       renderInput={(params: any) => (
-        <TextField
-          {...params}
-          placeholder="Search rewards"
-        />
+        <TextField {...params} placeholder="Search rewards" />
       )}
     />
   );
 }
 
+function EmptyState({ message }: { message: string }) {
+  return (
+    <Typography sx={{ color: "#a090c0", fontSize: "13px", py: 1 }}>{message}</Typography>
+  );
+}
 
 export default function Dashboard() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -214,14 +255,12 @@ export default function Dashboard() {
   const [selectedDays,    setSelectedDays]     = useState<Set<string>>(new Set());
   const [scheduleLoading, setScheduleLoading]  = useState(false);
   const [scheduleSaved,   setScheduleSaved]    = useState(false);
-  // Track whether the streak-schedule endpoint exists on this deployment
   const [scheduleSupported, setScheduleSupported] = useState(true);
 
   // ── Initial fetch ───────────────────────────────────────────────────────────
   useEffect(() => {
     async function init() {
       try {
-        // Dashboard and redemptions are required — if these fail we show an error
         const [dashRes, redRes, rewardsRes] = await Promise.all([
           fetch(`${API_BASE}/api/dashboard`, { credentials: "include" }),
           fetch(`${API_BASE}/api/redemptions`, { credentials: "include" }),
@@ -239,14 +278,12 @@ export default function Dashboard() {
         setRedemptions(redData.slice(0, MAX_STORED));
 
         const rewardData: Reward[] = rewardsRes.ok ? await rewardsRes.json() : [];
-
         setRewards(rewardData);
 
         if (rewardData.length > 0) {
           setLbReward(rewardData[0].title);
         }
 
-        // Load point config
         try {
           const pcRes = await fetch(`${API_BASE}/api/point-config`, { credentials: "include" });
           if (pcRes.ok) {
@@ -256,7 +293,6 @@ export default function Dashboard() {
           }
         } catch { /* non-fatal */ }
 
-        // Load the configured streak reward, fall back to first reward
         try {
           const srRes = await fetch(`${API_BASE}/api/streak-reward`, { credentials: "include" });
           if (srRes.ok) {
@@ -271,8 +307,6 @@ export default function Dashboard() {
           setStreakReward(rewardData[0]?.title ?? "");
         }
 
-        // Schedule fetch is optional — if Railway hasn't deployed new main.py yet,
-        // we just hide the schedule section rather than crashing the whole page.
         try {
           const schedRes = await fetch(`${API_BASE}/api/streak-schedule`, { credentials: "include" });
           if (schedRes.ok) {
@@ -282,7 +316,6 @@ export default function Dashboard() {
             setSchedule(DAYS.map((d) => ({ day: d, time: saved[d] ?? "" })));
             setSelectedDays(new Set(Object.keys(saved)));
           } else {
-            // 404 means backend not yet updated — disable section silently
             setScheduleSupported(false);
           }
         } catch {
@@ -354,14 +387,12 @@ export default function Dashboard() {
             ? prev
             : [...prev, { id: r.reward_title, title: r.reward_title }]
         );
-
       } else if (msg.type === "stream_online") {
         setStreamStatus({
           live: true, session_id: msg.session_id,
           started_at: msg.started_at, is_scheduled: msg.is_scheduled,
           scheduled_day: msg.scheduled_day,
         });
-
       } else if (msg.type === "stream_offline") {
         setStreamStatus({ live: false });
         fetch(`${API_BASE}/api/streaks`, { credentials: "include" })
@@ -460,392 +491,503 @@ export default function Dashboard() {
   }
 
   // ── Early returns ───────────────────────────────────────────────────────────
-  if (loading) return <main style={{ padding: "40px 20px" }}><p>Loading dashboard...</p></main>;
-  if (error) return (
-    <main style={{ padding: "40px 20px 60px" }}>
-      <section className="section-card">
-        <h2 className="section-title">Dashboard Error</h2>
-        <p className="section-text">{error}</p>
-      </section>
-    </main>
-  );
+  if (loading) {
+    return (
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+        <CircularProgress sx={{ color: "#8b7bff" }} />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ maxWidth: 600, mx: "auto", mt: 6, px: 3 }}>
+        <Alert severity="error" sx={{ background: "rgba(255,60,60,0.1)", color: "#ff8f8f", border: "1px solid rgba(255,60,60,0.3)" }}>
+          {error}
+        </Alert>
+      </Box>
+    );
+  }
+
+  const dialogPaperSx = {
+    background: "#1a1330",
+    border: "1px solid rgba(255,255,255,0.12)",
+    borderRadius: "12px",
+    color: "#f4ecff",
+  };
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <main style={{ padding: "20px 24px 48px", maxWidth: "1200px", margin: "0 auto" }}>
+    <Box
+      component="main"
+      sx={{ maxWidth: "1200px", mx: "auto", px: 3, pt: 3, pb: 6 }}
+    >
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }`}</style>
 
-      {/* Header bar */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px", paddingBottom: "16px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f4ecff" }}>
+      {/* Page header */}
+      <Stack
+        direction="row"
+        alignItems="flex-start"
+        justifyContent="space-between"
+        sx={{ mb: 3, pb: 2.5, borderBottom: "1px solid rgba(255,255,255,0.07)" }}
+      >
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 700, color: "#f4ecff", fontSize: { xs: "22px", sm: "28px" } }}>
             {dashboardData.login || "Dashboard"}
-          </h1>
+          </Typography>
           {streamStatus.live && streamStatus.started_at && (
-            <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#a090c0" }}>
+            <Typography sx={{ mt: 0.5, fontSize: "13px", color: "#a090c0" }}>
               Live since {new Date(streamStatus.started_at).toLocaleTimeString()}
               {streamStatus.scheduled_day ? ` · ${streamStatus.scheduled_day}` : " · bonus stream"}
-            </p>
+            </Typography>
           )}
-        </div>
-        {streamStatus.live && <LiveBadge />}
-      </div>
-
-      {/* Leaderboard (points) — full width */}
-      <section className="section-card" style={{ margin: "0 0 16px", padding: "16px 18px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-          <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Leaderboard</h2>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <DateRangeFilter from={pointsFrom} to={pointsTo} onFromChange={setPointsFrom} onToChange={setPointsTo} />
-            <button
-              onClick={() => { setPendingConfig(pointConfig); setPointConfigOpen(true); }}
-              style={{
-                padding: "4px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "11px",
-                background: "rgba(139,123,255,0.12)", border: "1px solid rgba(139,123,255,0.3)",
-                color: "#c5bcff", fontWeight: 600,
-              }}
-            >Configure</button>
-          </div>
-        </div>
-
-        {pointsLoading ? (
-          <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>Loading...</p>
-        ) : pointsEntries.length === 0 ? (
-          <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>
-            {pointConfig.reward_1st || pointConfig.reward_2nd || pointConfig.reward_3rd || pointConfig.checkin
-              ? "No points earned yet."
-              : "Configure rewards to start tracking points."}
-          </p>
-        ) : (
-          <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "4px" }}>
-            {pointsEntries.map((entry, i) => {
-              const rank  = i + 1;
-              const color = medalColors[rank] ?? "#8b7bff";
-              const label = medalLabel[rank]  ?? `#${rank}`;
-              return (
-                <li key={entry.user_name} style={{
-                  display: "flex", alignItems: "center", gap: "8px",
-                  padding: "5px 8px", borderRadius: "7px",
-                  background: rank <= 3 ? `${color}12` : "transparent",
-                }}>
-                  <span style={{ width: "28px", fontSize: "11px", fontWeight: 700, color, flexShrink: 0 }}>{label}</span>
-                  <span style={{ flex: 1, fontSize: "13px", fontWeight: 600, color: "#f4ecff" }}>{entry.user_name}</span>
-                  <span style={{ fontSize: "13px", fontWeight: 700, color }}>{entry.total_points}pts</span>
-                  <span style={{ fontSize: "11px", color: "#6a5c80", display: "flex", gap: "8px" }}>
-                    {entry.count_1st     > 0 && <span title="1st place">🥇×{entry.count_1st}</span>}
-                    {entry.count_2nd     > 0 && <span title="2nd place">🥈×{entry.count_2nd}</span>}
-                    {entry.count_3rd     > 0 && <span title="3rd place">🥉×{entry.count_3rd}</span>}
-                    {entry.count_checkin > 0 && <span title="Check-ins">✓×{entry.count_checkin}</span>}
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
+        </Box>
+        {streamStatus.live && (
+          <Chip
+            label="LIVE"
+            size="small"
+            icon={
+              <span style={{
+                width: 7, height: 7, borderRadius: "50%",
+                background: "#fff", animation: "pulse 1.2s infinite",
+                marginLeft: 8,
+              }} />
+            }
+            sx={{
+              background: "#ff4040", color: "#fff", fontWeight: 700,
+              fontSize: "12px", height: 26,
+              "& .MuiChip-icon": { color: "#fff" },
+            }}
+          />
         )}
-      </section>
+      </Stack>
 
-      {/* Middle row — Redemption Tracker + Watch Streaks */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
-
-        {/* Redemption Tracker */}
-        <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-            <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Redemption Tracker</h2>
-            <RewardDropdown value={lbReward} options={rewards} onChange={setLbReward} />
-          </div>
-          <div style={{ marginBottom: "10px" }}>
-            <DateRangeFilter from={lbFrom} to={lbTo} onFromChange={setLbFrom} onToChange={setLbTo} />
-          </div>
-          {lbLoading ? (
-            <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>Loading...</p>
-          ) : leaderboard.length === 0 ? (
-            <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>No data yet.</p>
+      <Stack spacing={2}>
+        {/* Leaderboard (points) — full width */}
+        <SectionCard
+          title="Leaderboard"
+          action={
+            <>
+              <DateRangeFilter from={pointsFrom} to={pointsTo} onFromChange={setPointsFrom} onToChange={setPointsTo} />
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => { setPendingConfig(pointConfig); setPointConfigOpen(true); }}
+                sx={{
+                  fontSize: "12px", borderColor: "rgba(139,123,255,0.4)",
+                  color: "#c5bcff", ml: 1,
+                  "&:hover": { borderColor: "#8b7bff", background: "rgba(139,123,255,0.08)" },
+                }}
+              >
+                Configure
+              </Button>
+            </>
+          }
+        >
+          {pointsLoading ? (
+            <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+              <CircularProgress size={24} sx={{ color: "#8b7bff" }} />
+            </Box>
+          ) : pointsEntries.length === 0 ? (
+            <EmptyState message={
+              pointConfig.reward_1st || pointConfig.reward_2nd || pointConfig.reward_3rd || pointConfig.checkin
+                ? "No points earned yet."
+                : "Configure rewards to start tracking points."
+            } />
           ) : (
-            <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "4px" }}>
-              {leaderboard.map((entry, i) => {
+            <List disablePadding>
+              {pointsEntries.map((entry, i) => {
                 const rank  = i + 1;
                 const color = medalColors[rank] ?? "#8b7bff";
                 const label = medalLabel[rank]  ?? `#${rank}`;
                 return (
-                  <li key={entry.user_name} style={{
-                    display: "flex", alignItems: "center", gap: "8px",
-                    padding: "5px 8px", borderRadius: "7px",
-                    background: rank <= 3 ? `${color}12` : "transparent",
-                  }}>
-                    <span style={{ width: "28px", fontSize: "11px", fontWeight: 700, color, flexShrink: 0 }}>{label}</span>
-                    <span style={{ flex: 1, fontSize: "13px", fontWeight: 600, color: "#f4ecff" }}>{entry.user_name}</span>
-                    <span style={{ fontSize: "13px", fontWeight: 700, color }}>{entry.count}</span>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-        </section>
-
-        {/* Watch Streaks */}
-        <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-            <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Watch Streaks</h2>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              {streakReward && (
-                <span style={{ fontSize: "11px", color: "#a090c0", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {streakReward}
-                </span>
-              )}
-              <button
-                onClick={openStreakConfig}
-                style={{
-                  padding: "4px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "11px",
-                  background: "rgba(139,123,255,0.12)", border: "1px solid rgba(139,123,255,0.3)",
-                  color: "#c5bcff", fontWeight: 600,
-                }}
-              >Configure</button>
-            </div>
-          </div>
-          {streakLoading ? (
-            <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>Loading...</p>
-          ) : streaks.length === 0 ? (
-            <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>No check-ins yet.</p>
-          ) : (
-            <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "4px" }}>
-              {streaks.map((entry, i) => {
-                const streakColor =
-                  entry.streak >= 20 ? "#FFD700" :
-                  entry.streak >= 10 ? "#ff8f8f" :
-                  entry.streak >= 5  ? "#8b7bff" : "#cbbce4";
-                return (
-                  <li key={entry.user_name} style={{
-                    display: "flex", alignItems: "center", gap: "8px",
-                    padding: "5px 8px", borderRadius: "7px",
-                  }}>
-                    <span style={{ width: "24px", fontSize: "11px", color: "#a090c0", flexShrink: 0 }}>#{i + 1}</span>
-                    <span style={{ flex: 1, fontSize: "13px", fontWeight: 600, color: "#f4ecff" }}>{entry.user_name}</span>
-                    <span style={{ fontSize: "12px", fontWeight: 700, color: streakColor }}>
-                      {entry.streak}s
-                    </span>
-                    <span style={{ fontSize: "11px", color: "#a090c0" }}>
-                      best: {entry.longest_streak}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-        </section>
-      </div>
-
-      {/* Stream Schedule */}
-      {scheduleSupported && (
-        <section className="section-card" style={{ margin: "0 0 16px", padding: "16px 18px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-            <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Stream Schedule</h2>
-            <button
-              onClick={saveSchedule}
-              disabled={scheduleLoading}
-              style={{
-                padding: "4px 14px", borderRadius: "6px", cursor: "pointer", fontSize: "12px",
-                background: scheduleSaved ? "rgba(80,200,120,0.15)" : "rgba(139,123,255,0.15)",
-                border: `1px solid ${scheduleSaved ? "#50c878" : "#8b7bff"}`,
-                color: scheduleSaved ? "#50c878" : "#c5bcff", fontWeight: 600,
-              }}
-            >
-              {scheduleLoading ? "Saving..." : scheduleSaved ? "Saved!" : "Save"}
-            </button>
-          </div>
-
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px" }}>
-            {DAYS.map((day) => {
-              const active = selectedDays.has(day);
-              return (
-                <button
-                  key={day}
-                  onClick={() => toggleDay(day)}
-                  style={{
-                    padding: "4px 10px", borderRadius: "6px", cursor: "pointer",
-                    fontSize: "12px", fontWeight: 600, border: "1px solid",
-                    borderColor: active ? "#8b7bff" : "rgba(255,255,255,0.1)",
-                    background: active ? "rgba(139,123,255,0.18)" : "rgba(255,255,255,0.03)",
-                    color: active ? "#c5bcff" : "#6a5c80",
-                    transition: "all 0.12s",
-                  }}
-                >
-                  {day}
-                </button>
-              );
-            })}
-          </div>
-
-          {DAYS.filter((d) => selectedDays.has(d)).length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-              {DAYS.filter((d) => selectedDays.has(d)).map((day) => {
-                const entry = schedule.find((s) => s.day === day);
-                return (
-                  <div key={day} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ fontSize: "12px", fontWeight: 600, color: "#c5bcff", width: "28px" }}>{day}</span>
-                    <input
-                      type="time"
-                      value={entry?.time ?? ""}
-                      onChange={(e) => updateTime(day, e.target.value)}
-                      style={{
-                        background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
-                        color: "#f4ecff", borderRadius: "6px", padding: "3px 7px", fontSize: "12px",
+                  <ListItem
+                    key={entry.user_name}
+                    disableGutters
+                    sx={{
+                      px: 1, py: 0.75, borderRadius: "8px",
+                      background: rank <= 3 ? `${color}12` : "transparent",
+                      mb: 0.5,
+                    }}
+                  >
+                    <Typography sx={{ width: 32, fontSize: "12px", fontWeight: 700, color, flexShrink: 0 }}>
+                      {label}
+                    </Typography>
+                    <ListItemText
+                      primary={entry.user_name}
+                      slotProps={{
+                        primary: { sx: { fontSize: "14px", fontWeight: 600, color: "#f4ecff" } },
                       }}
                     />
-                  </div>
+                    <Stack direction="row" alignItems="center" spacing={1.5}>
+                      <Typography sx={{ fontSize: "11px", color: "#6a5c80", display: "flex", gap: 1 }}>
+                        {entry.count_1st     > 0 && <span title="1st place">🥇×{entry.count_1st}</span>}
+                        {entry.count_2nd     > 0 && <span title="2nd place">🥈×{entry.count_2nd}</span>}
+                        {entry.count_3rd     > 0 && <span title="3rd place">🥉×{entry.count_3rd}</span>}
+                        {entry.count_checkin > 0 && <span title="Check-ins">✓×{entry.count_checkin}</span>}
+                      </Typography>
+                      <Typography sx={{ fontSize: "14px", fontWeight: 700, color }}>
+                        {entry.total_points}pts
+                      </Typography>
+                    </Stack>
+                  </ListItem>
                 );
               })}
-            </div>
+            </List>
           )}
-        </section>
-      )}
+        </SectionCard>
 
-      {/* Recent Redemptions — compact feed at the bottom */}
-      <section className="section-card" style={{ margin: 0, padding: "16px 18px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-          <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#a090c0" }}>Recent Redemptions</h2>
-          <span style={{ fontSize: "11px", color: "#6a5c80" }}>{redemptions.length} / {MAX_STORED}</span>
-        </div>
+        {/* Middle row — Redemption Tracker + Watch Streaks */}
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 2 }}>
 
-        {redemptions.length === 0 ? (
-          <p style={{ color: "#a090c0", fontSize: "12px", margin: 0 }}>No redemptions yet.</p>
-        ) : (
-          <div style={{ overflowY: "auto", maxHeight: `${VISIBLE_COUNT * 32}px` }}>
-            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "2px" }}>
-              {redemptions.map((r, i) => (
-                <li key={i} style={{
-                  display: "grid", gridTemplateColumns: "140px 1fr auto",
-                  alignItems: "center", gap: "10px",
-                  padding: "5px 8px", borderRadius: "6px",
-                  background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
-                }}>
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#f4ecff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.user_name}</span>
-                  <span style={{ fontSize: "12px", color: "#cbbce4", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.reward_title}</span>
-                  <span style={{ fontSize: "11px", color: "#6a5c80", whiteSpace: "nowrap" }}>{new Date(r.redeemed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {/* Redemption Tracker */}
+          <SectionCard
+            title="Redemption Tracker"
+            action={<RewardDropdown value={lbReward} options={rewards} onChange={setLbReward} />}
+          >
+            <Box sx={{ mb: 1.5 }}>
+              <DateRangeFilter from={lbFrom} to={lbTo} onFromChange={setLbFrom} onToChange={setLbTo} />
+            </Box>
+            {lbLoading ? (
+              <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+                <CircularProgress size={24} sx={{ color: "#8b7bff" }} />
+              </Box>
+            ) : leaderboard.length === 0 ? (
+              <EmptyState message="No data yet." />
+            ) : (
+              <List disablePadding>
+                {leaderboard.map((entry, i) => {
+                  const rank  = i + 1;
+                  const color = medalColors[rank] ?? "#8b7bff";
+                  const label = medalLabel[rank]  ?? `#${rank}`;
+                  return (
+                    <ListItem
+                      key={entry.user_name}
+                      disableGutters
+                      sx={{
+                        px: 1, py: 0.75, borderRadius: "8px",
+                        background: rank <= 3 ? `${color}12` : "transparent",
+                        mb: 0.5,
+                      }}
+                    >
+                      <Typography sx={{ width: 32, fontSize: "12px", fontWeight: 700, color, flexShrink: 0 }}>
+                        {label}
+                      </Typography>
+                      <ListItemText
+                        primary={entry.user_name}
+                        slotProps={{
+                          primary: { sx: { fontSize: "14px", fontWeight: 600, color: "#f4ecff" } },
+                        }}
+                      />
+                      <Typography sx={{ fontSize: "14px", fontWeight: 700, color }}>
+                        {entry.count}
+                      </Typography>
+                    </ListItem>
+                  );
+                })}
+              </List>
+            )}
+          </SectionCard>
+
+          {/* Watch Streaks */}
+          <SectionCard
+            title="Watch Streaks"
+            action={
+              <>
+                {streakReward && (
+                  <Typography sx={{ fontSize: "12px", color: "#a090c0", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {streakReward}
+                  </Typography>
+                )}
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={openStreakConfig}
+                  sx={{
+                    fontSize: "12px", borderColor: "rgba(139,123,255,0.4)",
+                    color: "#c5bcff",
+                    "&:hover": { borderColor: "#8b7bff", background: "rgba(139,123,255,0.08)" },
+                  }}
+                >
+                  Configure
+                </Button>
+              </>
+            }
+          >
+            {streakLoading ? (
+              <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+                <CircularProgress size={24} sx={{ color: "#8b7bff" }} />
+              </Box>
+            ) : streaks.length === 0 ? (
+              <EmptyState message="No check-ins yet." />
+            ) : (
+              <List disablePadding>
+                {streaks.map((entry, i) => {
+                  const streakColor =
+                    entry.streak >= 20 ? "#FFD700" :
+                    entry.streak >= 10 ? "#ff8f8f" :
+                    entry.streak >= 5  ? "#8b7bff" : "#cbbce4";
+                  return (
+                    <ListItem
+                      key={entry.user_name}
+                      disableGutters
+                      sx={{ px: 1, py: 0.75, borderRadius: "8px", mb: 0.5 }}
+                    >
+                      <Typography sx={{ width: 28, fontSize: "12px", color: "#a090c0", flexShrink: 0 }}>
+                        #{i + 1}
+                      </Typography>
+                      <ListItemText
+                        primary={entry.user_name}
+                        slotProps={{
+                          primary: { sx: { fontSize: "14px", fontWeight: 600, color: "#f4ecff" } },
+                        }}
+                      />
+                      <Stack direction="row" alignItems="center" spacing={1.5}>
+                        <Typography sx={{ fontSize: "13px", fontWeight: 700, color: streakColor }}>
+                          {entry.streak}s
+                        </Typography>
+                        <Typography sx={{ fontSize: "12px", color: "#a090c0" }}>
+                          best: {entry.longest_streak}
+                        </Typography>
+                      </Stack>
+                    </ListItem>
+                  );
+                })}
+              </List>
+            )}
+          </SectionCard>
+        </Box>
+
+        {/* Stream Schedule */}
+        {scheduleSupported && (
+          <SectionCard
+            title="Stream Schedule"
+            action={
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={saveSchedule}
+                disabled={scheduleLoading}
+                sx={{
+                  fontSize: "12px",
+                  borderColor: scheduleSaved ? "#50c878" : "rgba(139,123,255,0.4)",
+                  color: scheduleSaved ? "#50c878" : "#c5bcff",
+                  "&:hover": {
+                    borderColor: scheduleSaved ? "#50c878" : "#8b7bff",
+                    background: scheduleSaved ? "rgba(80,200,120,0.08)" : "rgba(139,123,255,0.08)",
+                  },
+                }}
+              >
+                {scheduleLoading ? "Saving..." : scheduleSaved ? "Saved!" : "Save"}
+              </Button>
+            }
+          >
+            <Stack spacing={1.5}>
+              <Stack direction="row" flexWrap="wrap" gap={1}>
+                {DAYS.map((day) => {
+                  const active = selectedDays.has(day);
+                  return (
+                    <Button
+                      key={day}
+                      size="small"
+                      variant={active ? "contained" : "outlined"}
+                      onClick={() => toggleDay(day)}
+                      sx={{
+                        fontSize: "12px", fontWeight: 600, minWidth: 48,
+                        borderColor: active ? "#8b7bff" : "rgba(255,255,255,0.1)",
+                        background: active ? "rgba(139,123,255,0.25)" : "rgba(255,255,255,0.03)",
+                        color: active ? "#c5bcff" : "#6a5c80",
+                        boxShadow: "none",
+                        "&:hover": {
+                          background: active ? "rgba(139,123,255,0.35)" : "rgba(255,255,255,0.06)",
+                          boxShadow: "none",
+                        },
+                      }}
+                    >
+                      {day}
+                    </Button>
+                  );
+                })}
+              </Stack>
+
+              {DAYS.filter((d) => selectedDays.has(d)).length > 0 && (
+                <Stack direction="row" flexWrap="wrap" gap={1.5} sx={{ pt: 0.5 }}>
+                  {DAYS.filter((d) => selectedDays.has(d)).map((day) => {
+                    const entry = schedule.find((s) => s.day === day);
+                    return (
+                      <Stack key={day} direction="row" alignItems="center" spacing={0.75}>
+                        <Typography sx={{ fontSize: "12px", fontWeight: 600, color: "#c5bcff", width: 28 }}>
+                          {day}
+                        </Typography>
+                        <input
+                          type="time"
+                          value={entry?.time ?? ""}
+                          onChange={(e) => updateTime(day, e.target.value)}
+                          style={{
+                            background: "rgba(255,255,255,0.05)",
+                            border: "1px solid rgba(255,255,255,0.1)",
+                            color: "#f4ecff", borderRadius: "6px",
+                            padding: "3px 7px", fontSize: "12px",
+                          }}
+                        />
+                      </Stack>
+                    );
+                  })}
+                </Stack>
+              )}
+            </Stack>
+          </SectionCard>
         )}
-      </section>
+
+        {/* Recent Redemptions */}
+        <SectionCard
+          title="Recent Redemptions"
+          action={
+            <Typography sx={{ fontSize: "12px", color: "#6a5c80" }}>
+              {redemptions.length} / {MAX_STORED}
+            </Typography>
+          }
+        >
+          {redemptions.length === 0 ? (
+            <EmptyState message="No redemptions yet." />
+          ) : (
+            <Box sx={{ overflowY: "auto", maxHeight: `${VISIBLE_COUNT * 38}px` }}>
+              <List disablePadding>
+                {redemptions.map((r, i) => (
+                  <ListItem
+                    key={i}
+                    disableGutters
+                    sx={{
+                      px: 1, py: 0.75, borderRadius: "6px",
+                      background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
+                    }}
+                  >
+                    <Typography sx={{ width: 140, fontSize: "13px", fontWeight: 600, color: "#f4ecff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 0 }}>
+                      {r.user_name}
+                    </Typography>
+                    <ListItemText
+                      primary={r.reward_title}
+                      slotProps={{
+                        primary: { sx: { fontSize: "13px", color: "#cbbce4", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                      }}
+                    />
+                    <Typography sx={{ fontSize: "12px", color: "#6a5c80", whiteSpace: "nowrap", flexShrink: 0 }}>
+                      {new Date(r.redeemed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </Typography>
+                  </ListItem>
+                ))}
+              </List>
+            </Box>
+          )}
+        </SectionCard>
+      </Stack>
+
       {/* Point config dialog */}
-      {pointConfigOpen && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
-          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
-        }}>
-          <div style={{
-            background: "#1a1330", border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: "12px", padding: "24px 28px", maxWidth: "420px", width: "90%",
-          }}>
-            <h3 style={{ margin: "0 0 6px", fontSize: "15px", fontWeight: 700, color: "#f4ecff" }}>
-              Configure Leaderboard Rewards
-            </h3>
-            <p style={{ margin: "0 0 18px", fontSize: "12px", color: "#6a5c80" }}>
-              Assign your channel point rewards to each placement. Check-in uses the reward configured in Watch Streaks.
-            </p>
-            {(["reward_1st", "reward_2nd", "reward_3rd"] as const).map((key, i) => {
-              const labels = ["🥇 1st Place (3 pts)", "🥈 2nd Place (2 pts)", "🥉 3rd Place (1 pt)"];
-              return (
-                <div key={key} style={{ marginBottom: "12px" }}>
-                  <p style={{ margin: "0 0 4px", fontSize: "12px", fontWeight: 600, color: "#c5bcff" }}>{labels[i]}</p>
-                  <RewardDropdown
-                    value={pendingConfig[key] ?? ""}
-                    options={rewards}
-                    onChange={(v) => setPendingConfig((prev) => ({ ...prev, [key]: v || null }))}
-                  />
-                </div>
-              );
-            })}
-            <div style={{ marginTop: "4px", padding: "10px", borderRadius: "7px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <p style={{ margin: 0, fontSize: "12px", color: "#6a5c80" }}>
-                ✓ Check-in (1 pt): <span style={{ color: "#c5bcff" }}>{pointConfig.checkin ?? "not configured"}</span>
-                {!pointConfig.checkin && <span> — set in Watch Streaks</span>}
-              </p>
-            </div>
-            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "20px" }}>
-              <button
-                onClick={() => setPointConfigOpen(false)}
-                style={{
-                  padding: "6px 16px", borderRadius: "7px", cursor: "pointer",
-                  background: "transparent", border: "1px solid rgba(255,255,255,0.12)",
-                  color: "#a090c0", fontSize: "13px", fontWeight: 600,
-                }}
-              >Cancel</button>
-              <button
-                onClick={savePointConfig}
-                disabled={pointConfigSaving}
-                style={{
-                  padding: "6px 16px", borderRadius: "7px", cursor: "pointer",
-                  background: "rgba(139,123,255,0.2)", border: "1px solid #8b7bff",
-                  color: "#c5bcff", fontSize: "13px", fontWeight: 600,
-                }}
-              >{pointConfigSaving ? "Saving..." : "Save"}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={pointConfigOpen}
+        onClose={() => setPointConfigOpen(false)}
+        PaperProps={{ sx: dialogPaperSx }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: "#f4ecff", fontWeight: 700, pb: 1 }}>
+          Configure Leaderboard Rewards
+        </DialogTitle>
+        <Divider sx={{ borderColor: "rgba(255,255,255,0.1)" }} />
+        <DialogContent sx={{ pt: 2 }}>
+          <Typography sx={{ mb: 2, fontSize: "13px", color: "#6a5c80" }}>
+            Assign your channel point rewards to each placement. Check-in uses the reward configured in Watch Streaks.
+          </Typography>
+          {(["reward_1st", "reward_2nd", "reward_3rd"] as const).map((key, i) => {
+            const labels = ["🥇 1st Place (3 pts)", "🥈 2nd Place (2 pts)", "🥉 3rd Place (1 pt)"];
+            return (
+              <Box key={key} sx={{ mb: 2 }}>
+                <Typography sx={{ mb: 0.5, fontSize: "13px", fontWeight: 600, color: "#c5bcff" }}>{labels[i]}</Typography>
+                <RewardDropdown
+                  value={pendingConfig[key] ?? ""}
+                  options={rewards}
+                  onChange={(v) => setPendingConfig((prev) => ({ ...prev, [key]: v || null }))}
+                />
+              </Box>
+            );
+          })}
+          <Box sx={{ p: 1.5, borderRadius: "8px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <Typography sx={{ fontSize: "12px", color: "#6a5c80" }}>
+              ✓ Check-in (1 pt):{" "}
+              <span style={{ color: "#c5bcff" }}>{pointConfig.checkin ?? "not configured"}</span>
+              {!pointConfig.checkin && " — set in Watch Streaks"}
+            </Typography>
+          </Box>
+        </DialogContent>
+        <Divider sx={{ borderColor: "rgba(255,255,255,0.1)" }} />
+        <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
+          <Button
+            onClick={() => setPointConfigOpen(false)}
+            sx={{ color: "#a090c0", borderColor: "rgba(255,255,255,0.12)" }}
+            variant="outlined"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={savePointConfig}
+            disabled={pointConfigSaving}
+            variant="contained"
+            sx={{ background: "rgba(139,123,255,0.3)", color: "#c5bcff", border: "1px solid #8b7bff", boxShadow: "none", "&:hover": { background: "rgba(139,123,255,0.45)", boxShadow: "none" } }}
+          >
+            {pointConfigSaving ? "Saving..." : "Save"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Confirm streak reward dialog */}
-      {confirmDialogOpen && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
-          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
-        }}>
-          <div style={{
-            background: "#1a1330", border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: "12px", padding: "24px 28px", maxWidth: "400px", width: "90%",
-          }}>
-            <h3 style={{ margin: "0 0 10px", fontSize: "15px", fontWeight: 700, color: "#f4ecff" }}>
-              Configure check-in reward
-            </h3>
-
-            {streamStatus.live && (
-              <div style={{
-                margin: "0 0 14px", padding: "8px 12px", borderRadius: "7px",
-                background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)",
-              }}>
-                <p style={{ margin: 0, fontSize: "12px", color: "#ff8f8f", fontWeight: 600 }}>
-                  ⚠ You are currently live. Changing this reward mid-stream may affect your viewers' watch streaks.
-                </p>
-              </div>
-            )}
-
-            <p style={{ margin: "0 0 12px", fontSize: "12px", color: "#a090c0", lineHeight: 1.5 }}>
-              Only this redemption will count toward viewer streaks. Streaks are global — changing this reward will not reset existing streaks.
-            </p>
-            <div style={{ marginBottom: "20px" }}>
-              <RewardDropdown
-                value={pendingStreakReward ?? ""}
-                options={rewards}
-                onChange={(v) => setPendingStreakReward(v || null)}
-              />
-            </div>
-            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-              <button
-                onClick={cancelStreakReward}
-                style={{
-                  padding: "6px 16px", borderRadius: "7px", cursor: "pointer",
-                  background: "transparent", border: "1px solid rgba(255,255,255,0.12)",
-                  color: "#a090c0", fontSize: "13px", fontWeight: 600,
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmStreakReward}
-                disabled={streakRewardSaving}
-                style={{
-                  padding: "6px 16px", borderRadius: "7px", cursor: "pointer",
-                  background: "rgba(139,123,255,0.2)", border: "1px solid #8b7bff",
-                  color: "#c5bcff", fontSize: "13px", fontWeight: 600,
-                }}
-              >
-                {streakRewardSaving ? "Saving..." : "Confirm"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </main>
+      <Dialog
+        open={confirmDialogOpen}
+        onClose={cancelStreakReward}
+        PaperProps={{ sx: dialogPaperSx }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: "#f4ecff", fontWeight: 700, pb: 1 }}>
+          Configure check-in reward
+        </DialogTitle>
+        <Divider sx={{ borderColor: "rgba(255,255,255,0.1)" }} />
+        <DialogContent sx={{ pt: 2 }}>
+          {streamStatus.live && (
+            <Alert
+              severity="warning"
+              sx={{ mb: 2, background: "rgba(255,60,60,0.1)", color: "#ff8f8f", border: "1px solid rgba(255,60,60,0.3)", "& .MuiAlert-icon": { color: "#ff8f8f" } }}
+            >
+              You are currently live. Changing this reward mid-stream may affect your viewers' watch streaks.
+            </Alert>
+          )}
+          <Typography sx={{ mb: 2, fontSize: "13px", color: "#a090c0", lineHeight: 1.6 }}>
+            Only this redemption will count toward viewer streaks. Streaks are global — changing this reward will not reset existing streaks.
+          </Typography>
+          <RewardDropdown
+            value={pendingStreakReward ?? ""}
+            options={rewards}
+            onChange={(v) => setPendingStreakReward(v || null)}
+          />
+        </DialogContent>
+        <Divider sx={{ borderColor: "rgba(255,255,255,0.1)" }} />
+        <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
+          <Button
+            onClick={cancelStreakReward}
+            sx={{ color: "#a090c0", borderColor: "rgba(255,255,255,0.12)" }}
+            variant="outlined"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmStreakReward}
+            disabled={streakRewardSaving}
+            variant="contained"
+            sx={{ background: "rgba(139,123,255,0.3)", color: "#c5bcff", border: "1px solid #8b7bff", boxShadow: "none", "&:hover": { background: "rgba(139,123,255,0.45)", boxShadow: "none" } }}
+          >
+            {streakRewardSaving ? "Saving..." : "Confirm"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }
