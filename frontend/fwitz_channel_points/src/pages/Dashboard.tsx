@@ -884,7 +884,7 @@ export default function Dashboard() {
       <Dialog
         open={pointConfigOpen}
         onClose={() => setPointConfigOpen(false)}
-        PaperProps={{ sx: dialogPaperSx }}
+        slotProps={{ paper: { sx: dialogPaperSx } }}
         maxWidth="xs"
         fullWidth
       >
@@ -941,7 +941,7 @@ export default function Dashboard() {
       <Dialog
         open={confirmDialogOpen}
         onClose={cancelStreakReward}
-        PaperProps={{ sx: dialogPaperSx }}
+        slotProps={{ paper: { sx: dialogPaperSx } }}
         maxWidth="xs"
         fullWidth
       >
