@@ -18,9 +18,12 @@ import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
 import Alert from "@mui/material/Alert";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "";
-const WS_BASE  = import.meta.env.VITE_WS_URL
-  ?? API_BASE.replace(/^https?/, "wss");
+const _rawApi  = import.meta.env.VITE_API_URL;
+const API_BASE = _rawApi && _rawApi !== "undefined" ? _rawApi : "";
+const _rawWs   = import.meta.env.VITE_WS_URL;
+const WS_BASE  = _rawWs && _rawWs !== "undefined"
+  ? _rawWs
+  : API_BASE.replace(/^https?/, "wss");
 
 const MAX_STORED = 50;
 const VISIBLE_COUNT = 10;
