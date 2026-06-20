@@ -2,6 +2,11 @@
   box-sizing: border-box;
 }
 
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
 html, body, #root {
   margin: 0;
   min-height: 100%;

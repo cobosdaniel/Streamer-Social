@@ -85,9 +85,8 @@ type StreamStatus = {
 
 // Shared card styles matching CRUD template structure with our color scheme
 const cardSx = {
-  background: "rgba(21, 18, 40, 0.75)",
+  background: "rgba(21, 18, 40, 0.95)",
   border: "1px solid rgba(255,255,255,0.07)",
-  backdropFilter: "blur(12px)",
   borderRadius: "12px",
   overflow: "hidden",
 };
@@ -284,41 +283,34 @@ export default function Dashboard() {
           setLbReward(rewardData[0].title);
         }
 
-        try {
-          const pcRes = await fetch(`${API_BASE}/api/point-config`, { credentials: "include" });
-          if (pcRes.ok) {
-            const pc = await pcRes.json();
-            setPointConfig(pc);
-            setPendingConfig(pc);
-          }
-        } catch { /* non-fatal */ }
+        const [pcRes, srRes, schedRes] = await Promise.allSettled([
+          fetch(`${API_BASE}/api/point-config`, { credentials: "include" }),
+          fetch(`${API_BASE}/api/streak-reward`, { credentials: "include" }),
+          fetch(`${API_BASE}/api/streak-schedule`, { credentials: "include" }),
+        ]);
 
-        try {
-          const srRes = await fetch(`${API_BASE}/api/streak-reward`, { credentials: "include" });
-          if (srRes.ok) {
-            const srData = await srRes.json();
-            const configured = srData.reward_title;
-            const match = rewardData.find((r) => r.title === configured);
-            setStreakReward(match ? configured : (rewardData[0]?.title ?? ""));
-          } else {
-            setStreakReward(rewardData[0]?.title ?? "");
-          }
-        } catch {
+        if (pcRes.status === "fulfilled" && pcRes.value.ok) {
+          const pc = await pcRes.value.json();
+          setPointConfig(pc);
+          setPendingConfig(pc);
+        }
+
+        if (srRes.status === "fulfilled" && srRes.value.ok) {
+          const srData = await srRes.value.json();
+          const configured = srData.reward_title;
+          const match = rewardData.find((r) => r.title === configured);
+          setStreakReward(match ? configured : (rewardData[0]?.title ?? ""));
+        } else {
           setStreakReward(rewardData[0]?.title ?? "");
         }
 
-        try {
-          const schedRes = await fetch(`${API_BASE}/api/streak-schedule`, { credentials: "include" });
-          if (schedRes.ok) {
-            const schedData = await schedRes.json();
-            const saved: Record<string, string> = {};
-            for (const s of schedData.scheduled_days ?? []) saved[s.day] = s.time ?? "";
-            setSchedule(DAYS.map((d) => ({ day: d, time: saved[d] ?? "" })));
-            setSelectedDays(new Set(Object.keys(saved)));
-          } else {
-            setScheduleSupported(false);
-          }
-        } catch {
+        if (schedRes.status === "fulfilled" && schedRes.value.ok) {
+          const schedData = await schedRes.value.json();
+          const saved: Record<string, string> = {};
+          for (const s of schedData.scheduled_days ?? []) saved[s.day] = s.time ?? "";
+          setSchedule(DAYS.map((d) => ({ day: d, time: saved[d] ?? "" })));
+          setSelectedDays(new Set(Object.keys(saved)));
+        } else {
           setScheduleSupported(false);
         }
 
@@ -359,7 +351,8 @@ export default function Dashboard() {
     if (pointsTo)   params.set("to_date",   pointsTo);
     fetch(`${API_BASE}/api/points-leaderboard?${params}`, { credentials: "include" })
       .then((r) => r.ok ? r.json() : []).then(setPointsEntries).catch(console.error).finally(() => setPointsLoading(false));
-  }, [loading, pointsFrom, pointsTo, pointConfig]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, pointsFrom, pointsTo, JSON.stringify(pointConfig)]);
 
   // ── WebSocket ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -522,8 +515,6 @@ export default function Dashboard() {
       component="main"
       sx={{ maxWidth: "1200px", mx: "auto", px: 3, pt: 3, pb: 6 }}
     >
-      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }`}</style>
-
       {/* Page header */}
       <Stack
         direction="row"
