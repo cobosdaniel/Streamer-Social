@@ -1,36 +1,13 @@
-import { useEffect, useState, ReactNode } from "react";
+import { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
-
-const API_BASE = import.meta.env.VITE_API_URL;
 
 type Props = {
   children: ReactNode;
+  loading: boolean;
+  isAuthenticated: boolean;
 };
 
-
-export default function ProtectedRoute({ children }: Props) {
-  const [loading, setLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  useEffect(() => {
-    async function checkAuth() {
-      try {
-        const response = await fetch(`${API_BASE}/api/me`, {
-          method: "GET",
-          credentials: "include",
-        });
-
-        setIsAuthenticated(response.ok);
-      } catch (error) {
-        setIsAuthenticated(false);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    checkAuth();
-  }, []);
-
+export default function ProtectedRoute({ children, loading, isAuthenticated }: Props) {
   if (loading) {
     return (
       <main style={{ padding: "40px 20px" }}>
