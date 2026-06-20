@@ -1,7 +1,6 @@
 import { useEffect, useState, ReactNode } from "react";
 import { Navigate } from "react-router-dom";
-
-const API_BASE = import.meta.env.VITE_API_URL;
+import { API_BASE } from "../env";
 
 type Props = {
   children: ReactNode;
