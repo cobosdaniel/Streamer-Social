@@ -276,7 +276,7 @@ export default function App() {
         <Route
           path="/dashboard"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute loading={loadingAuth} isAuthenticated={!!user}>
               <Dashboard />
             </ProtectedRoute>
           }
