@@ -31,6 +31,23 @@ export default function App() {
 
   const checkAuth = async () => {
     try {
+      // iOS WebKit/ITP blocks cookies set during cross-site OAuth redirect chains.
+      // The backend passes a short-lived exchange_token in the URL instead; we
+      // redeem it here via a same-origin fetch so the session cookie is set safely.
+      const params = new URLSearchParams(window.location.search);
+      const exchangeToken = params.get("exchange_token");
+      if (exchangeToken) {
+        params.delete("exchange_token");
+        const newSearch = params.toString();
+        const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : "");
+        window.history.replaceState(null, "", newUrl);
+
+        await fetch(`${API_BASE}/auth/exchange?token=${encodeURIComponent(exchangeToken)}`, {
+          method: "POST",
+          credentials: "include",
+        });
+      }
+
       const response = await fetch(`${API_BASE}/api/me`, {
         method: "GET",
         credentials: "include",

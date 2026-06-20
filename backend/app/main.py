@@ -48,8 +48,9 @@ TWITCH_REDIRECT_URI  = os.environ["TWITCH_REDIRECT_URI"]
 FRONTEND_BASE_URL    = os.getenv("FRONTEND_BASE_URL")
 INTERNAL_API_KEY     = os.environ["INTERNAL_API_KEY"]
 
-pending_states = {}
-user_tokens    = {}  # in-memory cache; populated from DB on startup and on login
+pending_states   = {}
+exchange_tokens  = {}  # short-lived one-time tokens for iOS ITP cookie handoff
+user_tokens      = {}  # in-memory cache; populated from DB on startup and on login
 
 
 def get_user_tokens(twitch_user_id: str) -> dict | None:
@@ -442,15 +443,35 @@ async def twitch_callback(
                    "client_id": client_id, "login": login})
     del pending_states[state]
 
-    session_token = secrets.token_urlsafe(32)
-    save_session(session_token, twitch_user_id)
+    # Use a short-lived exchange token instead of setting the cookie directly
+    # during the redirect chain. iOS WebKit/ITP drops cookies set mid-redirect
+    # from a cross-site OAuth flow. The frontend will call /auth/exchange to
+    # trade this token for the real session cookie in a first-party fetch context.
+    exchange_token = secrets.token_urlsafe(32)
+    exchange_tokens[exchange_token] = {
+        "twitch_user_id": twitch_user_id,
+        "expires_at": time.time() + 120,
+    }
 
-    response = RedirectResponse(url=f"{FRONTEND_BASE_URL}/dashboard")
+    return RedirectResponse(url=f"{FRONTEND_BASE_URL}/dashboard?exchange_token={exchange_token}")
+
+@app.post("/auth/exchange")
+@limiter.limit("20/minute")
+async def exchange_token_for_session(request: Request, token: str = Query(...)):
+    entry = exchange_tokens.pop(token, None)
+    if not entry or time.time() > entry["expires_at"]:
+        raise HTTPException(status_code=400, detail="Invalid or expired exchange token")
+
+    session_token = secrets.token_urlsafe(32)
+    save_session(session_token, entry["twitch_user_id"])
+
+    response = JSONResponse({"ok": True})
     response.set_cookie(
         key="session_token", value=session_token,
         httponly=True, secure=True, samesite="none", max_age=24 * 3600,
     )
     return response
+
 
 @app.get("/api/dashboard")
 async def dashboard(user_id: str = Depends(get_current_user)):
