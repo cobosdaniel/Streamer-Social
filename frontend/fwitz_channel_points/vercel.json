@@ -1,7 +1,7 @@
 {
   "rewrites": [
-    { "source": "/api/:path*",  "destination": "$BACKEND_URL/api/:path*"  },
-    { "source": "/auth/:path*", "destination": "$BACKEND_URL/auth/:path*" },
-    { "source": "/(.*)",        "destination": "/"                        }
+    { "source": "/api/:path*",  "destination": "https://streamer-social-production.up.railway.app/api/:path*"  },
+    { "source": "/auth/:path*", "destination": "https://streamer-social-production.up.railway.app/auth/:path*" },
+    { "source": "/(.*)",        "destination": "/"                                                             }
   ]
 }
