@@ -18,7 +18,9 @@ import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
 import Alert from "@mui/material/Alert";
 
-const API_BASE = import.meta.env.VITE_API_URL;
+const API_BASE = import.meta.env.VITE_API_URL ?? "";
+const WS_BASE  = import.meta.env.VITE_WS_URL
+  ?? API_BASE.replace(/^https?/, "wss");
 
 const MAX_STORED = 50;
 const VISIBLE_COUNT = 10;
@@ -359,7 +361,7 @@ export default function Dashboard() {
     if (!dashboardData.broadcaster_id || wsRef.current) return;
 
     const ws = new WebSocket(
-      `${API_BASE.replace("https", "wss")}/ws?user_id=${dashboardData.broadcaster_id}`
+      `${WS_BASE}/ws?user_id=${dashboardData.broadcaster_id}`
     );
     wsRef.current = ws;
 
