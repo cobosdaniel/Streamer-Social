@@ -1,4 +1,4 @@
-const BACKEND_BASE_URL = import.meta.env.VITE_API_URL;
+import { API_BASE as BACKEND_BASE_URL } from "../env";
 
 export default function TwitchLoginButton() {
   const handleLogin = () => {

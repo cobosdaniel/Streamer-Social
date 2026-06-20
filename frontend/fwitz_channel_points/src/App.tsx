@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, Routes, Route, Navigate } from "react-router-dom";
+import { API_BASE as _API_BASE } from "./env";
 
 import About from "./pages/About";
 import Contact from "./pages/Contact";
@@ -14,7 +15,8 @@ type User = {
 };
 
 export default function App() {
-  const API_BASE = import.meta.env.VITE_API_URL;
+
+  const API_BASE = _API_BASE;
 
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);

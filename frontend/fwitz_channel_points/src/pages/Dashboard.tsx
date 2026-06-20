@@ -17,8 +17,8 @@ import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
 import Alert from "@mui/material/Alert";
+import { API_BASE, WS_BASE } from "../env";
 
-const API_BASE = import.meta.env.VITE_API_URL;
 
 const MAX_STORED = 50;
 const VISIBLE_COUNT = 10;
