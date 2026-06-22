@@ -240,3 +240,440 @@ a {
 .profile-dropdown button:hover {
   background: rgba(255, 255, 255, 0.08);
 }
+
+/* ──────────────────────────────────────────────────────────────
+   Sticky-footer layout: nav + content + footer fill the viewport
+   ────────────────────────────────────────────────────────────── */
+
+.App {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-main {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+/* Buttons used as <a> links */
+.primary-btn,
+.secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* ── Home: shared section bits ───────────────────────────────── */
+
+.home-section {
+  scroll-margin-top: 100px;
+}
+
+.hero-eyebrow {
+  display: inline-block;
+  margin-bottom: 18px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(145, 70, 255, 0.15);
+  border: 1px solid rgba(145, 123, 255, 0.35);
+  color: #d7c4ff;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.section-eyebrow {
+  display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 13px;
+  font-weight: 700;
+  color: #b39cff;
+  margin-bottom: 8px;
+}
+
+/* ── About ───────────────────────────────────────────────────── */
+
+.about-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 32px;
+  align-items: start;
+}
+
+.about-text .section-text {
+  margin: 0 0 14px;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.tag {
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d7c4ff;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.about-aside {
+  background: rgba(145, 70, 255, 0.08);
+  border: 1px solid rgba(145, 123, 255, 0.2);
+  border-radius: 18px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.aside-label {
+  font-weight: 800;
+  font-size: 18px;
+  color: #f4ecff;
+}
+
+.aside-text {
+  color: #cbbce4;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.aside-btn {
+  margin-top: 4px;
+}
+
+.aside-tip {
+  color: #ff9fdb;
+  font-weight: 600;
+  font-size: 14px;
+  text-align: center;
+  transition: color 0.2s ease;
+}
+
+.aside-tip:hover {
+  color: #ff7dd1;
+}
+
+/* ── Features ─────────────────────────────────────────────────── */
+
+.features {
+  max-width: 1100px;
+  margin: 40px auto;
+  padding: 10px 20px;
+}
+
+.features-head {
+  text-align: center;
+  max-width: 640px;
+  margin: 0 auto 28px;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+}
+
+.feature-card {
+  padding: 22px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(10px);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(145, 123, 255, 0.4);
+}
+
+.feature-icon {
+  font-size: 30px;
+  margin-bottom: 12px;
+}
+
+.feature-title {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 800;
+  color: #f4ecff;
+}
+
+.feature-text {
+  margin: 0;
+  color: #bcaed7;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ── Socials ─────────────────────────────────────────────────── */
+
+.socials-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.social-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.social-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--brand);
+  box-shadow: 0 12px 28px -14px var(--brand);
+}
+
+.social-card-icon {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--brand);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.social-card-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.social-card-name {
+  font-weight: 700;
+  color: #f4ecff;
+  font-size: 15px;
+}
+
+.social-card-handle {
+  color: #a090c0;
+  font-size: 13px;
+}
+
+/* ── Contact ─────────────────────────────────────────────────── */
+
+.contact-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.contact-card {
+  flex: 1 1 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.contact-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(145, 123, 255, 0.4);
+}
+
+.contact-card-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a090c0;
+}
+
+.contact-card-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f4ecff;
+}
+
+.contact-card-tip:hover {
+  border-color: rgba(255, 111, 207, 0.5);
+}
+
+.contact-card-tip .contact-card-value {
+  color: #ff9fdb;
+}
+
+/* ── Footer ──────────────────────────────────────────────────── */
+
+.site-footer {
+  margin-top: 60px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(11, 10, 22, 0.55);
+  backdrop-filter: blur(14px);
+  padding: 48px 40px 24px;
+}
+
+.footer-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1.2fr;
+  gap: 40px;
+}
+
+.footer-brand {
+  font-size: 26px;
+  font-weight: 800;
+  background: linear-gradient(90deg, #8b7bff, #ff66c4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 12px;
+}
+
+.footer-tagline {
+  color: #bcaed7;
+  line-height: 1.6;
+  font-size: 14px;
+  max-width: 340px;
+  margin: 0 0 18px;
+}
+
+.footer-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #ff6fcf, #8f62ff);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  transition: transform 0.2s ease;
+}
+
+.footer-tip:hover {
+  transform: translateY(-2px);
+}
+
+.footer-heading {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a090c0;
+  margin: 0 0 14px;
+}
+
+.footer-links {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.footer-links a {
+  color: #cbbce4;
+  font-size: 14px;
+  width: fit-content;
+  transition: color 0.2s ease;
+}
+
+.footer-links a:hover {
+  color: #ff7dd1;
+}
+
+.footer-socials {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.footer-email {
+  color: #cbbce4;
+  font-size: 14px;
+  transition: color 0.2s ease;
+}
+
+.footer-email:hover {
+  color: #ff7dd1;
+}
+
+.footer-bottom {
+  max-width: 1100px;
+  margin: 32px auto 0;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #9a8cb8;
+}
+
+/* Shared small social icon button (footer) */
+.social-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #f4ecff;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: transform 0.2s ease, color 0.2s ease, border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.social-icon:hover {
+  color: var(--brand);
+  border-color: var(--brand);
+  box-shadow: 0 10px 24px -10px var(--brand);
+  transform: translateY(-3px);
+}
+
+/* ── Responsive ──────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .about-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .footer-inner {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .site-footer {
+    padding: 40px 20px 24px;
+  }
+}
+
+@media (max-width: 520px) {
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .footer-bottom {
+    flex-direction: column;
+  }
+}

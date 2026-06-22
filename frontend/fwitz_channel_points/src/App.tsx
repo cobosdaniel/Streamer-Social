@@ -1,17 +1,39 @@
 import { useEffect, useState } from "react";
-import { Link, Routes, Route, Navigate } from "react-router-dom";
+import { Link, Routes, Route, Navigate, useLocation } from "react-router-dom";
 
-import About from "./pages/About";
-import Contact from "./pages/Contact";
+import Home from "./pages/Home";
 import Login from "./pages/TwitchLoginButton";
 import Dashboard from "./pages/Dashboard";
 import ProtectedRoute from "./pages/ProtectedRoute";
-import TwitchLoginButton from "./pages/TwitchLoginButton";
+import Footer from "./components/Footer";
 
 type User = {
   login: string;
   broadcaster_id: string;
 };
+
+// Smooth-scrolls to a section when the URL carries a hash (e.g. /#about),
+// otherwise resets to the top on navigation. Lets the nav's About/Contact
+// links point at sections of the combined Home page.
+function ScrollToHash() {
+  const { pathname, hash } = useLocation();
+
+  useEffect(() => {
+    if (hash) {
+      const el = document.getElementById(hash.slice(1));
+      if (el) {
+        // Defer so the target section is mounted before we scroll.
+        requestAnimationFrame(() =>
+          el.scrollIntoView({ behavior: "smooth", block: "start" })
+        );
+        return;
+      }
+    }
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [pathname, hash]);
+
+  return null;
+}
 
 export default function App() {
   const API_BASE = import.meta.env.VITE_API_URL;
@@ -221,8 +243,8 @@ export default function App() {
           }}
         >
           <li><Link to="/">Home</Link></li>
-          <li><Link to="/about">About</Link></li>
-          <li><Link to="/contact">Contact</Link></li>
+          <li><Link to="/#about">About</Link></li>
+          <li><Link to="/#contact">Contact</Link></li>
 
           {!loadingAuth && !user && (
             <li>
@@ -242,48 +264,31 @@ export default function App() {
         </ul>
       </nav>
 
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <>
-              <section className="hero">
-                <h1 className="hero-title">Fwitz Channel Points</h1>
-                <div className="hero-subtitle">Twitch Rewards Dashboard</div>
-                <p className="hero-text">
-                  Track redemptions, manage viewer interactions, and build a cleaner
-                  Twitch channel points experience with a modern dashboard.
-                </p>
+      <ScrollToHash />
 
-                <div className="hero-actions">
-                  {!user ? (
-                    <TwitchLoginButton />
-                  ) : (
-                    <Link to="/dashboard" className="primary-btn">
-                      Go to Dashboard
-                    </Link>
-                  )}
-                </div>
-              </section>
-            </>
-          }
-        />
+      <div className="app-main">
+        <Routes>
+          <Route path="/" element={<Home isAuthenticated={!!user} />} />
 
-        <Route path="/about" element={<About />} />
-        <Route path="/contact" element={<Contact />} />
-        <Route path="/login" element={<Login />} />
+          {/* About & Contact are sections of the combined Home page. */}
+          <Route path="/about" element={<Navigate to="/#about" replace />} />
+          <Route path="/contact" element={<Navigate to="/#contact" replace />} />
+          <Route path="/login" element={<Login />} />
 
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute loading={loadingAuth} isAuthenticated={!!user}>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute loading={loadingAuth} isAuthenticated={!!user}>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
+
+      <Footer />
     </div>
   );
 }
