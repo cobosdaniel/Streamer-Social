@@ -76,6 +76,23 @@ a {
   background: transparent;
 }
 
+.nav-login-btn {
+  background: none;
+  border: none;
+  padding: 8px 0;
+  color: #f4ecff;
+  font-weight: 600;
+  font-size: inherit;
+  font-family: inherit;
+  opacity: 0.9;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.nav-login-btn:hover {
+  color: #ff7dd1;
+}
+
 /* Hero */
 
 .hero {

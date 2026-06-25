@@ -362,6 +362,14 @@ def root():
 def twitch_login(request: Request):
     return RedirectResponse(build_auth_url(["channel:read:redemptions"]))
 
+@app.get("/auth/twitch/login-url")
+@limiter.limit("20/minute")
+def twitch_login_url(request: Request):
+    # Returns the Twitch OAuth URL as JSON instead of redirecting.
+    # The frontend navigates directly to Twitch, bypassing Safari's
+    # bounce-tracking mitigation which blocks cross-site redirect chains.
+    return JSONResponse({"auth_url": build_auth_url(["channel:read:redemptions"])})
+
 @app.post("/auth/logout")
 def logout(request: Request):
     token = request.cookies.get("session_token")

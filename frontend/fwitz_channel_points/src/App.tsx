@@ -248,7 +248,22 @@ export default function App() {
 
           {!loadingAuth && !user && (
             <li>
-              <a href={`${API_BASE}/auth/twitch/login`}>Login</a>
+              <button
+                className="nav-login-btn"
+                onClick={async () => {
+                  try {
+                    const resp = await fetch(`${API_BASE}/auth/twitch/login-url`, {
+                      credentials: "include",
+                    });
+                    const { auth_url } = await resp.json();
+                    window.location.href = auth_url;
+                  } catch {
+                    window.location.href = `${API_BASE}/auth/twitch/login`;
+                  }
+                }}
+              >
+                Login
+              </button>
             </li>
           )}
 
