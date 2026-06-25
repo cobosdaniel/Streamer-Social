@@ -531,6 +531,118 @@ a {
   color: #ff9fdb;
 }
 
+/* ── Login Modal ─────────────────────────────────────────────── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 20px;
+}
+
+.modal-card {
+  position: relative;
+  background: #1a1230;
+  border: 1px solid rgba(145, 123, 255, 0.25);
+  border-radius: 24px;
+  padding: 40px 36px 32px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(145,70,255,0.1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(255, 255, 255, 0.07);
+  border: none;
+  color: #a090c0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.modal-close:hover {
+  background: rgba(255, 255, 255, 0.13);
+  color: #f4ecff;
+}
+
+.modal-brand {
+  font-size: 26px;
+  font-weight: 900;
+  background: linear-gradient(90deg, #8b7bff, #ff66c4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 20px;
+}
+
+.modal-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #f4ecff;
+  margin: 0 0 10px;
+}
+
+.modal-body {
+  color: #a090c0;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0 0 28px;
+  max-width: 320px;
+}
+
+.twitch-login-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 20px;
+  background: #9147ff;
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+  box-shadow: 0 8px 24px rgba(145, 71, 255, 0.35);
+}
+
+.twitch-login-btn:hover {
+  background: #772ce8;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(145, 71, 255, 0.45);
+}
+
+.twitch-login-btn:active {
+  transform: translateY(0);
+}
+
+.modal-fine {
+  margin: 18px 0 0;
+  font-size: 11px;
+  color: #6a5c80;
+  line-height: 1.5;
+}
+
 /* ── Footer ──────────────────────────────────────────────────── */
 
 .site-footer {

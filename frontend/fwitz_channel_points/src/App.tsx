@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { Link, Routes, Route, Navigate, useLocation } from "react-router-dom";
 
 import Home from "./pages/Home";
-import Login from "./pages/TwitchLoginButton";
 import Dashboard from "./pages/Dashboard";
 import ProtectedRoute from "./pages/ProtectedRoute";
 import Footer from "./components/Footer";
+import LoginModal from "./components/LoginModal";
+import { apiFetch, storeSessionToken, clearSessionToken } from "./lib/apiFetch";
 
 type User = {
   login: string;
@@ -41,6 +42,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -53,9 +55,6 @@ export default function App() {
 
   const checkAuth = async () => {
     try {
-      // iOS WebKit/ITP blocks cookies set during cross-site OAuth redirect chains.
-      // The backend passes a short-lived exchange_token in the URL instead; we
-      // redeem it here via a same-origin fetch so the session cookie is set safely.
       const params = new URLSearchParams(window.location.search);
       const exchangeToken = params.get("exchange_token");
       if (exchangeToken) {
@@ -64,16 +63,22 @@ export default function App() {
         const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : "");
         window.history.replaceState(null, "", newUrl);
 
-        await fetch(`${API_BASE}/auth/exchange?token=${encodeURIComponent(exchangeToken)}`, {
+        // The backend sets a cookie (desktop) AND returns session_token in the body (iOS).
+        // iOS Safari's ITP blocks cross-origin Set-Cookie, so we store the token in
+        // localStorage and send it as an Authorization header on every subsequent request.
+        const exchangeResp = await fetch(`${API_BASE}/auth/exchange?token=${encodeURIComponent(exchangeToken)}`, {
           method: "POST",
           credentials: "include",
         });
+        if (exchangeResp.ok) {
+          const exchangeData = await exchangeResp.json();
+          if (exchangeData.session_token) {
+            storeSessionToken(exchangeData.session_token);
+          }
+        }
       }
 
-      const response = await fetch(`${API_BASE}/api/me`, {
-        method: "GET",
-        credentials: "include",
-      });
+      const response = await apiFetch("/api/me");
 
       if (!response.ok) {
         setUser(null);
@@ -93,14 +98,10 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      await fetch(`${API_BASE}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
-
+      await apiFetch("/auth/logout", { method: "POST" });
+      clearSessionToken();
       setUser(null);
       setMenuOpen(false);
-
       window.location.href = "/";
     } catch (error) {
       console.error("Logout failed:", error);
@@ -250,17 +251,7 @@ export default function App() {
             <li>
               <button
                 className="nav-login-btn"
-                onClick={async () => {
-                  try {
-                    const resp = await fetch(`${API_BASE}/auth/twitch/login-url`, {
-                      credentials: "include",
-                    });
-                    const { auth_url } = await resp.json();
-                    window.location.href = auth_url;
-                  } catch {
-                    window.location.href = `${API_BASE}/auth/twitch/login`;
-                  }
-                }}
+                onClick={() => setLoginModalOpen(true)}
               >
                 Login
               </button>
@@ -281,6 +272,8 @@ export default function App() {
 
       <ScrollToHash />
 
+      <LoginModal open={loginModalOpen} onClose={() => setLoginModalOpen(false)} />
+
       <div className="app-main">
         <Routes>
           <Route path="/" element={<Home isAuthenticated={!!user} />} />
@@ -288,7 +281,7 @@ export default function App() {
           {/* About & Contact are sections of the combined Home page. */}
           <Route path="/about" element={<Navigate to="/#about" replace />} />
           <Route path="/contact" element={<Navigate to="/#contact" replace />} />
-          <Route path="/login" element={<Login />} />
+          <Route path="/login" element={<Navigate to="/" replace />} />
 
           <Route
             path="/dashboard"
