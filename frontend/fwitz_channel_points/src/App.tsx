@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { Link, Routes, Route, Navigate, useLocation } from "react-router-dom";
 
 import Home from "./pages/Home";
-import Login from "./pages/TwitchLoginButton";
 import Dashboard from "./pages/Dashboard";
 import ProtectedRoute from "./pages/ProtectedRoute";
 import Footer from "./components/Footer";
+import LoginModal from "./components/LoginModal";
 
 type User = {
   login: string;
@@ -41,6 +41,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -250,17 +251,7 @@ export default function App() {
             <li>
               <button
                 className="nav-login-btn"
-                onClick={async () => {
-                  try {
-                    const resp = await fetch(`${API_BASE}/auth/twitch/login-url`, {
-                      credentials: "include",
-                    });
-                    const { auth_url } = await resp.json();
-                    window.location.href = auth_url;
-                  } catch {
-                    window.location.href = `${API_BASE}/auth/twitch/login`;
-                  }
-                }}
+                onClick={() => setLoginModalOpen(true)}
               >
                 Login
               </button>
@@ -281,6 +272,8 @@ export default function App() {
 
       <ScrollToHash />
 
+      <LoginModal open={loginModalOpen} onClose={() => setLoginModalOpen(false)} />
+
       <div className="app-main">
         <Routes>
           <Route path="/" element={<Home isAuthenticated={!!user} />} />
@@ -288,7 +281,7 @@ export default function App() {
           {/* About & Contact are sections of the combined Home page. */}
           <Route path="/about" element={<Navigate to="/#about" replace />} />
           <Route path="/contact" element={<Navigate to="/#contact" replace />} />
-          <Route path="/login" element={<Login />} />
+          <Route path="/login" element={<Navigate to="/" replace />} />
 
           <Route
             path="/dashboard"
