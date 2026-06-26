@@ -387,6 +387,20 @@ export default function Dashboard() {
           started_at: msg.started_at, is_scheduled: msg.is_scheduled,
           scheduled_day: msg.scheduled_day,
         });
+      } else if (msg.type === "streak_update") {
+        setStreaks((prev) => {
+          const entry: StreakEntry = {
+            user_name:      msg.user_name,
+            streak:         msg.current_streak,
+            longest_streak: msg.longest_streak,
+            updated_at:     new Date().toISOString(),
+          };
+          const idx = prev.findIndex((s) => s.user_name === msg.user_name);
+          const next = idx >= 0
+            ? prev.map((s, i) => (i === idx ? entry : s))
+            : [...prev, entry];
+          return next.sort((a, b) => b.streak - a.streak);
+        });
       } else if (msg.type === "stream_offline") {
         setStreamStatus({ live: false });
         apiFetch("/api/streaks")
