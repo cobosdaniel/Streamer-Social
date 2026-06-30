@@ -253,11 +253,14 @@ async def get_rewards(request: Request, user_id: str = Depends(get_current_user)
 # ── Streak Schedule ────────────────────────────────────────────────────────────
 
 class ScheduleDay(BaseModel):
-    day:  str
-    time: Optional[str] = None
+    day:   str
+    start: Optional[str] = None
+    end:   Optional[str] = None
+    time:  Optional[str] = None  # legacy single-time, kept for back-compat
 
 class StreakSchedulePayload(BaseModel):
     scheduled_days: list[ScheduleDay]
+    timezone:       Optional[str] = None
 
 @app.get("/api/point-config")
 @limiter.limit("60/minute")
@@ -327,17 +330,26 @@ async def set_streak_reward_endpoint(
 
 @app.get("/api/streak-schedule")
 async def get_schedule(user_id: str = Depends(get_current_user)):
-    schedule = get_streak_schedule(user_id)
-    return {"scheduled_days": schedule or []}
+    sched = get_streak_schedule(user_id)
+    return {"scheduled_days": sched["days"], "timezone": sched["timezone"]}
 
 @app.post("/api/streak-schedule")
 async def update_schedule(
     payload: StreakSchedulePayload,
     user_id: str = Depends(get_current_user),
 ):
-    days = [d.dict() for d in payload.scheduled_days]
-    save_streak_schedule(user_id, days)
-    return {"ok": True, "scheduled_days": days}
+    # Normalise to either an all-day {day} entry or a full window {day, start, end}.
+    # A half-filled window (only one time) is coerced to all-day.
+    days = []
+    for d in payload.scheduled_days:
+        start = d.start or d.time  # accept legacy `time` as a start value
+        if start and d.end:
+            days.append({"day": d.day, "start": start, "end": d.end})
+        else:
+            days.append({"day": d.day})
+
+    save_streak_schedule(user_id, days, payload.timezone)
+    return {"ok": True, "scheduled_days": days, "timezone": payload.timezone}
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────

@@ -72,8 +72,9 @@ type StreakEntry = {
 };
 
 type ScheduleDay = {
-  day:  string;
-  time: string;
+  day:   string;
+  start: string;
+  end:   string;
 };
 
 type StreamStatus = {
@@ -251,8 +252,14 @@ export default function Dashboard() {
   const [pendingConfig,   setPendingConfig]   = useState<PointConfig>({ reward_1st: null, reward_2nd: null, reward_3rd: null, checkin: null });
   const [pointConfigSaving, setPointConfigSaving] = useState(false);
 
-  const [schedule,        setSchedule]        = useState<ScheduleDay[]>(DAYS.map((d) => ({ day: d, time: "" })));
+  const [schedule,        setSchedule]        = useState<ScheduleDay[]>(DAYS.map((d) => ({ day: d, start: "", end: "" })));
   const [selectedDays,    setSelectedDays]     = useState<Set<string>>(new Set());
+  const [scheduleTz,      setScheduleTz]       = useState<string>(() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; }
+    catch { return "UTC"; }
+  });
+  // Days the streamer has put into "window" mode (vs the all-day default).
+  const [windowDays,      setWindowDays]        = useState<Set<string>>(new Set());
   const [scheduleLoading, setScheduleLoading]  = useState(false);
   const [scheduleSaved,   setScheduleSaved]    = useState(false);
   const [scheduleSupported, setScheduleSupported] = useState(true);
@@ -307,10 +314,15 @@ export default function Dashboard() {
 
         if (schedRes.status === "fulfilled" && schedRes.value.ok) {
           const schedData = await schedRes.value.json();
-          const saved: Record<string, string> = {};
-          for (const s of schedData.scheduled_days ?? []) saved[s.day] = s.time ?? "";
-          setSchedule(DAYS.map((d) => ({ day: d, time: saved[d] ?? "" })));
+          const saved: Record<string, { start: string; end: string }> = {};
+          for (const s of schedData.scheduled_days ?? []) {
+            // Accept the new {start,end} shape, falling back to legacy {time}.
+            saved[s.day] = { start: s.start ?? s.time ?? "", end: s.end ?? "" };
+          }
+          setSchedule(DAYS.map((d) => ({ day: d, start: saved[d]?.start ?? "", end: saved[d]?.end ?? "" })));
           setSelectedDays(new Set(Object.keys(saved)));
+          setWindowDays(new Set(Object.keys(saved).filter((d) => saved[d].start && saved[d].end)));
+          if (schedData.timezone) setScheduleTz(schedData.timezone);
         } else {
           setScheduleSupported(false);
         }
@@ -415,27 +427,50 @@ export default function Dashboard() {
   function toggleDay(day: string) {
     setSelectedDays((prev) => {
       const next = new Set(prev);
-      next.has(day) ? next.delete(day) : next.add(day);
+      if (next.has(day)) {
+        next.delete(day);
+        // Deselecting a day drops any window it had configured.
+        setWindowDays((w) => { const n = new Set(w); n.delete(day); return n; });
+        setSchedule((s) => s.map((d) => d.day === day ? { ...d, start: "", end: "" } : d));
+      } else {
+        next.add(day);
+      }
       return next;
     });
   }
 
-  function updateTime(day: string, time: string) {
-    setSchedule((prev) => prev.map((d) => d.day === day ? { ...d, time } : d));
+  function updateWindow(day: string, field: "start" | "end", value: string) {
+    setSchedule((prev) => prev.map((d) => d.day === day ? { ...d, [field]: value } : d));
+  }
+
+  // Switch a day between all-day (default) and a start/end window.
+  function setDayMode(day: string, mode: "all" | "window") {
+    setWindowDays((prev) => {
+      const next = new Set(prev);
+      mode === "window" ? next.add(day) : next.delete(day);
+      return next;
+    });
+    if (mode === "all") {
+      // Clearing the window returns the day to "show up whenever".
+      setSchedule((prev) => prev.map((d) => d.day === day ? { ...d, start: "", end: "" } : d));
+    }
   }
 
   async function saveSchedule() {
     setScheduleLoading(true);
     setScheduleSaved(false);
     try {
+      // Only send a window when BOTH times are set; otherwise the day is all-day.
       const selected = schedule
         .filter((d) => selectedDays.has(d.day))
-        .map((d) => ({ day: d.day, ...(d.time ? { time: d.time } : {}) }));
+        .map((d) => (d.start && d.end
+          ? { day: d.day, start: d.start, end: d.end }
+          : { day: d.day }));
 
       await apiFetch("/api/streak-schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scheduled_days: selected }),
+        body: JSON.stringify({ scheduled_days: selected, timezone: scheduleTz }),
       });
       setScheduleSaved(true);
       setTimeout(() => setScheduleSaved(false), 2500);
@@ -815,28 +850,60 @@ export default function Dashboard() {
               </Stack>
 
               {DAYS.filter((d) => selectedDays.has(d)).length > 0 && (
-                <Stack direction="row" sx={{ flexWrap: "wrap", gap: 1.5, pt: 0.5 }}>
+                <Stack spacing={1} sx={{ pt: 0.5 }}>
                   {DAYS.filter((d) => selectedDays.has(d)).map((day) => {
                     const entry = schedule.find((s) => s.day === day);
+                    const isWindow = windowDays.has(day);
+                    const timeInputSx: React.CSSProperties = {
+                      background: "rgba(255,255,255,0.05)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      color: "#f4ecff", borderRadius: "6px",
+                      padding: "3px 7px", fontSize: "12px",
+                    };
+                    const modeBtnSx = (on: boolean) => ({
+                      fontSize: "11px", fontWeight: 600, minWidth: 0, px: 1, py: 0.25,
+                      lineHeight: 1.4, textTransform: "none" as const, boxShadow: "none",
+                      borderColor: on ? "#8b7bff" : "rgba(255,255,255,0.1)",
+                      background: on ? "rgba(139,123,255,0.25)" : "rgba(255,255,255,0.03)",
+                      color: on ? "#c5bcff" : "#6a5c80",
+                      "&:hover": { background: on ? "rgba(139,123,255,0.35)" : "rgba(255,255,255,0.06)", boxShadow: "none" },
+                    });
                     return (
-                      <Stack key={day} direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                      <Stack key={day} direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
                         <Typography sx={{ fontSize: "12px", fontWeight: 600, color: "#c5bcff", width: 28 }}>
                           {day}
                         </Typography>
-                        <input
-                          type="time"
-                          value={entry?.time ?? ""}
-                          onChange={(e) => updateTime(day, e.target.value)}
-                          style={{
-                            background: "rgba(255,255,255,0.05)",
-                            border: "1px solid rgba(255,255,255,0.1)",
-                            color: "#f4ecff", borderRadius: "6px",
-                            padding: "3px 7px", fontSize: "12px",
-                          }}
-                        />
+                        <Stack direction="row" spacing={0.5}>
+                          <Button size="small" variant="outlined" onClick={() => setDayMode(day, "all")} sx={modeBtnSx(!isWindow)}>
+                            All day
+                          </Button>
+                          <Button size="small" variant="outlined" onClick={() => setDayMode(day, "window")} sx={modeBtnSx(isWindow)}>
+                            Set window
+                          </Button>
+                        </Stack>
+                        {isWindow && (
+                          <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
+                            <input
+                              type="time"
+                              value={entry?.start ?? ""}
+                              onChange={(e) => updateWindow(day, "start", e.target.value)}
+                              style={timeInputSx}
+                            />
+                            <Typography sx={{ fontSize: "12px", color: "#6a5c80" }}>→</Typography>
+                            <input
+                              type="time"
+                              value={entry?.end ?? ""}
+                              onChange={(e) => updateWindow(day, "end", e.target.value)}
+                              style={timeInputSx}
+                            />
+                          </Stack>
+                        )}
                       </Stack>
                     );
                   })}
+                  <Typography sx={{ fontSize: "11px", color: "#6a5c80", pt: 0.25 }}>
+                    Times are in {scheduleTz}. “All day” means viewers just need to show up that day; a window only penalizes no-shows when you’re live during it.
+                  </Typography>
                 </Stack>
               )}
             </Stack>
