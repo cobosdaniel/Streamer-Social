@@ -3,7 +3,8 @@ import json
 import logging
 import websocket
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 from db import (
@@ -84,49 +85,104 @@ DAY_ABBREVS = {
     4: "Fri", 5: "Sat", 6: "Sun",
 }
 
+
+def _local_zone(timezone_name):
+    """Resolve the streamer's stored IANA zone, falling back to UTC."""
+    if not timezone_name:
+        return timezone.utc
+    try:
+        return ZoneInfo(timezone_name)
+    except Exception:
+        logger.warning("Unknown schedule timezone %r — falling back to UTC", timezone_name)
+        return timezone.utc
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """Ensure a datetime is UTC-aware. Naive values (e.g. MySQL DATETIME read
+    back from the DB) are assumed to be UTC, since that's how we store them."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _parse_hhmm(value):
+    """Parse a 'HH:MM' string into (hour, minute), or None if blank/invalid."""
+    if not value:
+        return None
+    try:
+        hour, minute = (int(x) for x in value.split(":")[:2])
+        return hour, minute
+    except (ValueError, TypeError):
+        return None
+
+
 def classify_session(broadcaster_id, started_at: datetime):
-    schedule = get_streak_schedule(broadcaster_id)
-    day_abbrev = DAY_ABBREVS[started_at.weekday()]
+    """Provisional classification at stream start.
 
-    # No schedule configured at all = every day is required
-    if not schedule:
-        return {
-            "scheduled_day": day_abbrev,
-            "counts_toward_streak": True,
-            "required_day": True,
-        }
-
-    schedule_map = {s["day"]: s.get("time") for s in schedule}
-
-    # Day is not part of configured schedule:
-    # still reward attendance, but don't punish missing it
-    if day_abbrev not in schedule_map:
-        return {
-            "scheduled_day": day_abbrev,
-            "counts_toward_streak": True,
-            "required_day": False,
-        }
-
-    scheduled_time_str = schedule_map[day_abbrev]
-
-    # Day is scheduled, no time restriction
-    if not scheduled_time_str:
-        return {
-            "scheduled_day": day_abbrev,
-            "counts_toward_streak": True,
-            "required_day": True,
-        }
-
-    hour, minute = map(int, scheduled_time_str.split(":")[:2])
-    scheduled_dt = started_at.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    delta = abs((started_at - scheduled_dt).total_seconds())
-    within_window = delta <= 7200
+    scheduled_day / counts_toward_streak are final here; required_day is
+    recomputed at settlement (once ended_at is known) by is_required_day().
+    """
+    sched = get_streak_schedule(broadcaster_id)
+    tz = _local_zone(sched.get("timezone"))
+    local_start = _as_utc(started_at).astimezone(tz)
+    day_abbrev = DAY_ABBREVS[local_start.weekday()]
 
     return {
         "scheduled_day": day_abbrev,
         "counts_toward_streak": True,
-        "required_day": within_window,
+        # Provisional — finalised at settlement with the full live interval.
+        "required_day": is_required_day(sched, started_at, started_at),
     }
+
+
+def is_required_day(sched, started_at: datetime, ended_at: datetime) -> bool:
+    """Whether no-shows should be penalised for this session.
+
+    `sched` is the {"days": [...], "timezone": ...} dict from get_streak_schedule.
+    Times are interpreted in the streamer's canonical zone. A day is "required"
+    when the live interval [started_at, ended_at] overlaps the scheduled window;
+    all-day entries are required whenever the stream was live that day.
+    """
+    days = sched.get("days") or []
+    if not days:
+        # No schedule configured at all → every day is required.
+        return True
+
+    tz = _local_zone(sched.get("timezone"))
+    started_at = _as_utc(started_at)
+    ended_at = _as_utc(ended_at)
+    local_start = started_at.astimezone(tz)
+    day_abbrev = DAY_ABBREVS[local_start.weekday()]
+
+    entry = next((d for d in days if d.get("day") == day_abbrev), None)
+
+    # Day isn't part of the schedule → reward attendance but never penalise.
+    if entry is None:
+        return False
+
+    # Back-compat: a legacy single `time` entry is treated as all-day.
+    start_hm = _parse_hhmm(entry.get("start"))
+    end_hm = _parse_hhmm(entry.get("end"))
+
+    # All-day (no full window) → required whenever live that day.
+    if start_hm is None or end_hm is None:
+        return True
+
+    # Build the local window anchored on the stream's local start date.
+    window_start = local_start.replace(
+        hour=start_hm[0], minute=start_hm[1], second=0, microsecond=0
+    )
+    window_end = local_start.replace(
+        hour=end_hm[0], minute=end_hm[1], second=0, microsecond=0
+    )
+    # end <= start means the window crosses midnight (e.g. 19:00 → 00:00).
+    if window_end <= window_start:
+        window_end += timedelta(days=1)
+
+    local_end = ended_at.astimezone(tz)
+
+    # Required iff the live interval overlaps the window.
+    return local_start < window_end and local_end > window_start
 
 
 # ── Main tracker ───────────────────────────────────────────────────────────────
@@ -216,6 +272,16 @@ def run_tracker_for_streamer(streamer, shutdown_event=None):
                 closed_session = end_stream_session(broadcaster_id, ended_at)
 
                 if closed_session:
+                    # Recompute required_day now that the full live interval is
+                    # known — this is what makes "only penalised once the stream
+                    # reaches the start time" work.
+                    sched = get_streak_schedule(broadcaster_id)
+                    closed_session["required_day"] = is_required_day(
+                        sched,
+                        closed_session["started_at"],
+                        closed_session["ended_at"],
+                    )
+
                     logger.info(
                         "Stream OFFLINE for %s — settling streaks for session %s "
                         "(counts_toward_streak=%s, required_day=%s, scheduled_day=%s)",

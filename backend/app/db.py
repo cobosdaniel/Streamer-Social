@@ -288,30 +288,40 @@ def get_viewer_streaks(twitch_user_id, limit=20, from_date=None, to_date=None):
 # ── Streak Schedule ────────────────────────────────────────────────────────────
 
 def get_streak_schedule(twitch_user_id):
+    """Return the streamer's schedule as {"days": [...], "timezone": str|None}.
+
+    Each day entry is either an all-day day {"day": "Mon"} or a windowed day
+    {"day": "Mon", "start": "19:00", "end": "00:00"}. The timezone is the single
+    canonical IANA zone the times are expressed in (None ⇒ treat as UTC).
+    """
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
-        SELECT scheduled_days FROM streak_schedules
+        SELECT scheduled_days, timezone FROM streak_schedules
         WHERE twitch_user_id = %s
     """, (twitch_user_id,))
     row = cursor.fetchone()
     cursor.close()
     conn.close()
     if not row:
-        return None
-    return json.loads(row["scheduled_days"])
+        return {"days": [], "timezone": None}
+    return {
+        "days": json.loads(row["scheduled_days"]) if row["scheduled_days"] else [],
+        "timezone": row.get("timezone"),
+    }
 
 
-def save_streak_schedule(twitch_user_id, scheduled_days):
+def save_streak_schedule(twitch_user_id, scheduled_days, timezone=None):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO streak_schedules (twitch_user_id, scheduled_days)
-        VALUES (%s, %s)
+        INSERT INTO streak_schedules (twitch_user_id, scheduled_days, timezone)
+        VALUES (%s, %s, %s)
         ON DUPLICATE KEY UPDATE
             scheduled_days = VALUES(scheduled_days),
+            timezone = VALUES(timezone),
             updated_at = CURRENT_TIMESTAMP
-    """, (twitch_user_id, json.dumps(scheduled_days)))
+    """, (twitch_user_id, json.dumps(scheduled_days), timezone))
     conn.commit()
     cursor.close()
     conn.close()
@@ -360,6 +370,27 @@ def _ensure_point_reward_columns():
     conn.close()
 
 _ensure_point_reward_columns()
+
+
+def _ensure_schedule_timezone_column():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME   = 'streak_schedules'
+          AND COLUMN_NAME  = 'timezone'
+    """)
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("""
+            ALTER TABLE streak_schedules
+            ADD COLUMN timezone VARCHAR(64) DEFAULT NULL
+        """)
+        conn.commit()
+    cursor.close()
+    conn.close()
+
+_ensure_schedule_timezone_column()
 
 
 def get_point_config(twitch_user_id: str) -> dict:
