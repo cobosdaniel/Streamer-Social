@@ -105,7 +105,13 @@ app.add_middleware(
 
 
 def get_current_user(request: Request):
-    token = request.cookies.get("session_token")
+    # Authorization header takes priority — iOS Safari blocks cross-origin Set-Cookie
+    # so the frontend stores the token in localStorage and sends it here as a Bearer token.
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[len("Bearer "):]
+    else:
+        token = request.cookies.get("session_token")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     row = get_session(token)
@@ -441,9 +447,21 @@ def root():
 def twitch_login(request: Request):
     return RedirectResponse(build_auth_url(["channel:read:redemptions"]))
 
+@app.get("/auth/twitch/login-url")
+@limiter.limit("20/minute")
+def twitch_login_url(request: Request):
+    # Returns the Twitch OAuth URL as JSON instead of redirecting.
+    # The frontend navigates directly to Twitch, bypassing Safari's
+    # bounce-tracking mitigation which blocks cross-site redirect chains.
+    return JSONResponse({"auth_url": build_auth_url(["channel:read:redemptions"])})
+
 @app.post("/auth/logout")
 def logout(request: Request):
-    token = request.cookies.get("session_token")
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[len("Bearer "):]
+    else:
+        token = request.cookies.get("session_token")
     if token:
         row = get_session(token)
         if row:
@@ -544,7 +562,9 @@ async def exchange_token_for_session(request: Request, token: str = Query(...)):
     session_token = secrets.token_urlsafe(32)
     save_session(session_token, entry["twitch_user_id"])
 
-    response = JSONResponse({"ok": True})
+    # Return the token in the body so iOS clients can store it in localStorage
+    # and send it as an Authorization header — Safari ITP blocks cross-origin Set-Cookie.
+    response = JSONResponse({"ok": True, "session_token": session_token})
     response.set_cookie(
         key="session_token", value=session_token,
         httponly=True, secure=True, samesite="none", max_age=24 * 3600,

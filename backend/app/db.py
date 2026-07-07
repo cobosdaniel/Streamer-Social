@@ -173,6 +173,8 @@ def get_active_session(twitch_user_id):
     return row
 
 
+_STREAK_KEY = "__streak__"
+
 # ── Viewer Streaks ─────────────────────────────────────────────────────────────
 
 def settle_streaks_for_session(session):
@@ -205,8 +207,6 @@ def settle_streaks_for_session(session):
 
         # Query redemptions by the configured reward but store streaks under
         # the fixed sentinel so changing the reward never resets viewer streaks.
-        _STREAK_KEY = "__streak__"
-
         cursor.execute("""
             SELECT DISTINCT user_id, user_name
             FROM redemptions
@@ -230,9 +230,13 @@ def settle_streaks_for_session(session):
                     )
                     VALUES (%s, %s, %s, %s, 1, 1, %s)
                     ON DUPLICATE KEY UPDATE
-                        user_name = VALUES(user_name),
-                        longest_streak = GREATEST(longest_streak, current_streak + 1),
-                        current_streak = current_streak + 1,
+                        user_name       = VALUES(user_name),
+                        longest_streak  = IF(last_session_id = VALUES(last_session_id),
+                                             longest_streak,
+                                             GREATEST(longest_streak, current_streak + 1)),
+                        current_streak  = IF(last_session_id = VALUES(last_session_id),
+                                             current_streak,
+                                             current_streak + 1),
                         last_session_id = VALUES(last_session_id)
                 """, (twitch_user_id, viewer_twitch_id, user_name, _STREAK_KEY, session_id))
 
@@ -243,7 +247,7 @@ def settle_streaks_for_session(session):
                 params = (twitch_user_id, _STREAK_KEY, *checked_in_ids)
                 cursor.execute(f"""
                     UPDATE viewer_streaks
-                    SET current_streak = 0
+                    SET previous_streak = current_streak, current_streak = 0
                     WHERE twitch_user_id = %s
                       AND reward_title = %s
                       AND current_streak > 0
@@ -252,7 +256,7 @@ def settle_streaks_for_session(session):
             else:
                 cursor.execute("""
                     UPDATE viewer_streaks
-                    SET current_streak = 0
+                    SET previous_streak = current_streak, current_streak = 0
                     WHERE twitch_user_id = %s
                       AND reward_title = %s
                       AND current_streak > 0
@@ -262,6 +266,52 @@ def settle_streaks_for_session(session):
     except Exception:
         conn.rollback()
         raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def update_viewer_streak_on_redemption(
+    twitch_user_id: str,
+    viewer_twitch_id: str,
+    user_name: str,
+    session_id: int,
+) -> dict | None:
+    """Increment streak at redemption time (real-time path). Returns updated row or None if already counted this session."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT last_session_id FROM viewer_streaks
+            WHERE twitch_user_id = %s
+              AND viewer_twitch_id = %s
+              AND reward_title = %s
+        """, (twitch_user_id, viewer_twitch_id, _STREAK_KEY))
+        row = cursor.fetchone()
+        if row and row["last_session_id"] == session_id:
+            return None
+
+        cursor.execute("""
+            INSERT INTO viewer_streaks (
+                twitch_user_id, viewer_twitch_id, user_name,
+                reward_title, current_streak, longest_streak, last_session_id
+            )
+            VALUES (%s, %s, %s, %s, 1, 1, %s)
+            ON DUPLICATE KEY UPDATE
+                user_name       = VALUES(user_name),
+                longest_streak  = GREATEST(longest_streak, current_streak + 1),
+                current_streak  = current_streak + 1,
+                last_session_id = VALUES(last_session_id)
+        """, (twitch_user_id, viewer_twitch_id, user_name, _STREAK_KEY, session_id))
+        conn.commit()
+
+        cursor.execute("""
+            SELECT current_streak, longest_streak FROM viewer_streaks
+            WHERE twitch_user_id = %s
+              AND viewer_twitch_id = %s
+              AND reward_title = %s
+        """, (twitch_user_id, viewer_twitch_id, _STREAK_KEY))
+        return cursor.fetchone()
     finally:
         cursor.close()
         conn.close()
@@ -341,6 +391,27 @@ def save_streak_schedule(twitch_user_id, scheduled_days, timezone=None):
 
 
 # ── Streak reward config ───────────────────────────────────────────────────────
+
+def _ensure_previous_streak_column():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME   = 'viewer_streaks'
+          AND COLUMN_NAME  = 'previous_streak'
+    """)
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("""
+            ALTER TABLE viewer_streaks
+            ADD COLUMN previous_streak INT DEFAULT NULL
+        """)
+        conn.commit()
+    cursor.close()
+    conn.close()
+
+_ensure_previous_streak_column()
+
 
 def _ensure_streak_reward_column():
     conn = get_connection()

@@ -17,7 +17,7 @@ export default function ProtectedRoute({ children, loading, isAuthenticated }: P
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return children;

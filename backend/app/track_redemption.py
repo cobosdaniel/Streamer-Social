@@ -15,6 +15,8 @@ from db import (
     end_stream_session,
     settle_streaks_for_session,
     get_streak_schedule,
+    get_streak_reward,
+    update_viewer_streak_on_redemption,
     refresh_access_token,
 )
 
@@ -236,6 +238,19 @@ def run_tracker_for_streamer(streamer, shutdown_event=None):
                     "redeemed_at":  redeemed_at,
                     "status":       status,
                 })
+
+                streak_reward = get_streak_reward(broadcaster_id)
+                if streak_reward and reward_title == streak_reward and db_session_id is not None:
+                    updated = update_viewer_streak_on_redemption(
+                        broadcaster_id, user_id, user_name, db_session_id
+                    )
+                    if updated:
+                        notify_backend(broadcaster_id, "streak_update", {
+                            "user_name":        user_name,
+                            "viewer_twitch_id": user_id,
+                            "current_streak":   updated["current_streak"],
+                            "longest_streak":   updated["longest_streak"],
+                        })
 
             # ── Stream online ─────────────────────────────────────────────────
             elif sub_type == "stream.online":

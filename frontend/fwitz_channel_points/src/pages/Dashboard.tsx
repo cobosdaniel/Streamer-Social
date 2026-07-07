@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { apiFetch } from "../lib/apiFetch";
 import Autocomplete from "@mui/material/Autocomplete";
 import TextField from "@mui/material/TextField";
 import Box from "@mui/material/Box";
@@ -268,9 +269,9 @@ export default function Dashboard() {
     async function init() {
       try {
         const [dashRes, redRes, rewardsRes] = await Promise.all([
-          fetch(`${API_BASE}/api/dashboard`, { credentials: "include" }),
-          fetch(`${API_BASE}/api/redemptions`, { credentials: "include" }),
-          fetch(`${API_BASE}/api/rewards`, { credentials: "include" })
+          apiFetch("/api/dashboard"),
+          apiFetch("/api/redemptions"),
+          apiFetch("/api/rewards"),
         ]);
 
         if (!dashRes.ok) {
@@ -291,9 +292,9 @@ export default function Dashboard() {
         }
 
         const [pcRes, srRes, schedRes] = await Promise.allSettled([
-          fetch(`${API_BASE}/api/point-config`, { credentials: "include" }),
-          fetch(`${API_BASE}/api/streak-reward`, { credentials: "include" }),
-          fetch(`${API_BASE}/api/streak-schedule`, { credentials: "include" }),
+          apiFetch("/api/point-config"),
+          apiFetch("/api/streak-reward"),
+          apiFetch("/api/streak-schedule"),
         ]);
 
         if (pcRes.status === "fulfilled" && pcRes.value.ok) {
@@ -342,7 +343,7 @@ export default function Dashboard() {
     const params = new URLSearchParams({ reward_title: lbReward });
     if (lbFrom) params.set("from_date", lbFrom);
     if (lbTo)   params.set("to_date",   lbTo);
-    fetch(`${API_BASE}/api/leaderboard?${params}`, { credentials: "include" })
+    apiFetch(`/api/leaderboard?${params}`)
       .then((r) => r.json()).then(setLeaderboard).catch(console.error).finally(() => setLbLoading(false));
   }, [lbReward, lbFrom, lbTo]);
 
@@ -350,7 +351,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (loading) return;
     setStreakLoading(true);
-    fetch(`${API_BASE}/api/streaks`, { credentials: "include" })
+    apiFetch("/api/streaks")
       .then((r) => r.ok ? r.json() : []).then(setStreaks).catch(console.error).finally(() => setStreakLoading(false));
   }, [loading]);
 
@@ -361,7 +362,7 @@ export default function Dashboard() {
     const params = new URLSearchParams();
     if (pointsFrom) params.set("from_date", pointsFrom);
     if (pointsTo)   params.set("to_date",   pointsTo);
-    fetch(`${API_BASE}/api/points-leaderboard?${params}`, { credentials: "include" })
+    apiFetch(`/api/points-leaderboard?${params}`)
       .then((r) => r.ok ? r.json() : []).then(setPointsEntries).catch(console.error).finally(() => setPointsLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, pointsFrom, pointsTo, JSON.stringify(pointConfig)]);
@@ -398,9 +399,23 @@ export default function Dashboard() {
           started_at: msg.started_at, is_scheduled: msg.is_scheduled,
           scheduled_day: msg.scheduled_day,
         });
+      } else if (msg.type === "streak_update") {
+        setStreaks((prev) => {
+          const entry: StreakEntry = {
+            user_name:      msg.user_name,
+            streak:         msg.current_streak,
+            longest_streak: msg.longest_streak,
+            updated_at:     new Date().toISOString(),
+          };
+          const idx = prev.findIndex((s) => s.user_name === msg.user_name);
+          const next = idx >= 0
+            ? prev.map((s, i) => (i === idx ? entry : s))
+            : [...prev, entry];
+          return next.sort((a, b) => b.streak - a.streak);
+        });
       } else if (msg.type === "stream_offline") {
         setStreamStatus({ live: false });
-        fetch(`${API_BASE}/api/streaks`, { credentials: "include" })
+        apiFetch("/api/streaks")
           .then((r) => r.json()).then(setStreaks).catch(console.error);
       }
     };
@@ -452,8 +467,8 @@ export default function Dashboard() {
           ? { day: d.day, start: d.start, end: d.end }
           : { day: d.day }));
 
-      await fetch(`${API_BASE}/api/streak-schedule`, {
-        method: "POST", credentials: "include",
+      await apiFetch("/api/streak-schedule", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scheduled_days: selected, timezone: scheduleTz }),
       });
@@ -476,8 +491,8 @@ export default function Dashboard() {
     if (!pendingStreakReward) return;
     setStreakRewardSaving(true);
     try {
-      await fetch(`${API_BASE}/api/streak-reward`, {
-        method: "POST", credentials: "include",
+      await apiFetch("/api/streak-reward", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reward_title: pendingStreakReward }),
       });
@@ -500,8 +515,8 @@ export default function Dashboard() {
   async function savePointConfig() {
     setPointConfigSaving(true);
     try {
-      await fetch(`${API_BASE}/api/point-config`, {
-        method: "POST", credentials: "include",
+      await apiFetch("/api/point-config", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reward_1st: pendingConfig.reward_1st,
