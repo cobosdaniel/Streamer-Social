@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 const API_BASE = import.meta.env.VITE_API_URL;
 
 interface Props {
@@ -20,6 +22,16 @@ function TwitchIcon() {
 }
 
 export default function LoginModal({ open, onClose }: Props) {
+  // Escape is the keyboard equivalent of the backdrop's mouse-only click-to-close.
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const handleLogin = async () => {
@@ -35,15 +47,23 @@ export default function LoginModal({ open, onClose }: Props) {
   };
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- mouse-only convenience close; Escape (handled above) is the keyboard equivalent
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events -- stops click-outside propagation only, not an interactive action itself */}
+      <div
+        className="modal-card"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="login-modal-title"
+      >
         <button className="modal-close" onClick={onClose} aria-label="Close">
           ✕
         </button>
 
         <div className="modal-brand">Fwitz</div>
 
-        <h2 className="modal-title">Sign in to continue</h2>
+        <h2 id="login-modal-title" className="modal-title">Sign in to continue</h2>
         <p className="modal-body">
           Connect your Twitch account to track redemptions, climb the
           leaderboards, and keep your watch streak alive.
