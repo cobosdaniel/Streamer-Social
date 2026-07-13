@@ -207,7 +207,10 @@ function RewardDropdown({
         <TextField
           {...params}
           placeholder="Search rewards"
-          slotProps={{ htmlInput: { ...params.inputProps, "aria-label": "Search rewards" } }}
+          slotProps={{
+            ...params.slotProps,
+            htmlInput: { ...params.slotProps?.htmlInput, "aria-label": "Search rewards" },
+          }}
         />
       )}
     />
