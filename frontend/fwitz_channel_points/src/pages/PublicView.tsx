@@ -518,7 +518,7 @@ export default function PublicView() {
                     />
                     <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
                       <Typography sx={{ fontSize: "13px", fontWeight: 700, color: streakColor }}>
-                        {entry.streak}s
+                        current: {entry.streak}
                       </Typography>
                       <Typography sx={{ fontSize: "12px", color: "#a090c0" }}>
                         best: {entry.longest_streak}
