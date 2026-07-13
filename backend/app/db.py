@@ -205,14 +205,15 @@ def settle_streaks_for_session(session):
             conn.close()
             return
 
-        # Query redemptions by the configured reward but store streaks under
-        # the fixed sentinel so changing the reward never resets viewer streaks.
+        # Query redemptions by the configured reward's id (not its title, which
+        # can be renamed on Twitch) but store streaks under the fixed sentinel
+        # so changing the reward never resets viewer streaks.
         cursor.execute("""
             SELECT DISTINCT user_id, user_name
             FROM redemptions
             WHERE session_id = %s
               AND twitch_user_id = %s
-              AND reward_title = %s
+              AND reward_id = %s
         """, (session_id, twitch_user_id, configured_reward))
         checked_in = {r["user_id"]: r["user_name"] for r in cursor.fetchall()}
 
@@ -478,6 +479,8 @@ _ensure_schedule_timezone_column()
 
 
 def get_point_config(twitch_user_id: str) -> dict:
+    """reward_1st/2nd/3rd/lurker/checkin store the Twitch reward *id*, not its
+    title — titles can be renamed on Twitch, which would silently break matching."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
@@ -547,7 +550,7 @@ def get_points_leaderboard(twitch_user_id: str, from_date: str | None = None, to
             unions.append(f"""
                 SELECT user_name, '{tag}' AS reward_title_tag, COUNT(*) AS cnt, COUNT(*) * {points} AS points
                 FROM redemptions
-                WHERE twitch_user_id = %s AND reward_title = %s{date_filter}
+                WHERE twitch_user_id = %s AND reward_id = %s{date_filter}
                 GROUP BY user_name
             """)
             params += [twitch_user_id, reward] + date_params
@@ -575,23 +578,38 @@ def get_points_leaderboard(twitch_user_id: str, from_date: str | None = None, to
     return rows
 
 
-def get_redeemed_reward_titles(twitch_user_id: str) -> list[str]:
-    """Distinct reward titles this streamer has ever had redeemed, for the public reward picker."""
+def get_redeemed_rewards(twitch_user_id: str) -> list[dict]:
+    """Distinct rewards this streamer has ever had redeemed, for the public reward
+    picker. Matching elsewhere is by id, but viewers still need a title to read —
+    this uses each reward's most recently redeemed title, in case it was renamed."""
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
     cursor.execute("""
-        SELECT DISTINCT reward_title
-        FROM redemptions
-        WHERE twitch_user_id = %s
-        ORDER BY reward_title
-    """, (twitch_user_id,))
+        SELECT r.reward_id AS id, r.reward_title AS title
+        FROM redemptions r
+        INNER JOIN (
+            SELECT reward_id, MAX(redeemed_at) AS max_at
+            FROM redemptions
+            WHERE twitch_user_id = %s
+            GROUP BY reward_id
+        ) latest ON r.reward_id = latest.reward_id AND r.redeemed_at = latest.max_at
+        WHERE r.twitch_user_id = %s
+        GROUP BY r.reward_id, r.reward_title
+        ORDER BY r.reward_title
+    """, (twitch_user_id, twitch_user_id))
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
-    return [r[0] for r in rows]
+    return rows
 
 
 def get_streak_reward(twitch_user_id: str) -> str | None:
+    """Returns the configured check-in reward's Twitch id.
+
+    Stored in the legacy `reward_title` column (kept to avoid a migration) —
+    it holds the reward's id, not its title, so renaming the reward on Twitch
+    doesn't silently break streak matching.
+    """
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute(
@@ -604,7 +622,7 @@ def get_streak_reward(twitch_user_id: str) -> str | None:
     return row["reward_title"] if row else None
 
 
-def save_streak_reward(twitch_user_id: str, reward_title: str):
+def save_streak_reward(twitch_user_id: str, reward_id: str):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -613,7 +631,7 @@ def save_streak_reward(twitch_user_id: str, reward_title: str):
         ON DUPLICATE KEY UPDATE
             reward_title = VALUES(reward_title),
             updated_at   = CURRENT_TIMESTAMP
-    """, (twitch_user_id, json.dumps([]), reward_title))
+    """, (twitch_user_id, json.dumps([]), reward_id))
     conn.commit()
     cursor.close()
     conn.close()

@@ -16,7 +16,7 @@ from db import (
     get_streak_reward, save_streak_reward,
     get_point_config, save_point_config, get_points_leaderboard,
     get_streamer_by_login, get_active_session,
-    get_redeemed_reward_titles,
+    get_redeemed_rewards,
 )
 import os
 import logging
@@ -150,7 +150,7 @@ async def get_redemptions(request: Request, user_id: str = Depends(get_current_u
 @limiter.limit("60/minute")
 async def get_leaderboard(
     request: Request,
-    reward_title: str,
+    reward_id: str,
     from_date: str | None = None,
     to_date:   str | None = None,
     user_id: str = Depends(get_current_user),
@@ -158,8 +158,8 @@ async def get_leaderboard(
     conn   = get_connection()
     cursor = conn.cursor(dictionary=True)
 
-    query  = "SELECT user_name, COUNT(*) AS count FROM redemptions WHERE twitch_user_id = %s AND reward_title = %s"
-    params: list = [user_id, reward_title]
+    query  = "SELECT user_name, COUNT(*) AS count FROM redemptions WHERE twitch_user_id = %s AND reward_id = %s"
+    params: list = [user_id, reward_id]
 
     if from_date:
         query += " AND redeemed_at >= %s"
@@ -236,7 +236,7 @@ async def public_points_leaderboard(
 @limiter.limit("60/minute")
 async def public_rewards(request: Request, login: str):
     user_id = resolve_streamer(login)
-    return get_redeemed_reward_titles(user_id)
+    return get_redeemed_rewards(user_id)
 
 
 @app.get("/api/public/{login}/leaderboard")
@@ -244,7 +244,7 @@ async def public_rewards(request: Request, login: str):
 async def public_leaderboard(
     request: Request,
     login: str,
-    reward_title: str,
+    reward_id: str,
     from_date: str | None = None,
     to_date:   str | None = None,
 ):
@@ -252,8 +252,8 @@ async def public_leaderboard(
     conn   = get_connection()
     cursor = conn.cursor(dictionary=True)
 
-    query  = "SELECT user_name, COUNT(*) AS count FROM redemptions WHERE twitch_user_id = %s AND reward_title = %s"
-    params: list = [user_id, reward_title]
+    query  = "SELECT user_name, COUNT(*) AS count FROM redemptions WHERE twitch_user_id = %s AND reward_id = %s"
+    params: list = [user_id, reward_id]
 
     if from_date:
         query += " AND redeemed_at >= %s"
@@ -420,11 +420,11 @@ async def points_leaderboard_endpoint(
 @app.get("/api/streak-reward")
 @limiter.limit("60/minute")
 async def get_streak_reward_endpoint(request: Request, user_id: str = Depends(get_current_user)):
-    return {"reward_title": get_streak_reward(user_id)}
+    return {"reward_id": get_streak_reward(user_id)}
 
 
 class StreakRewardPayload(BaseModel):
-    reward_title: str
+    reward_id: str
 
 
 @app.post("/api/streak-reward")
@@ -434,8 +434,8 @@ async def set_streak_reward_endpoint(
     payload: StreakRewardPayload,
     user_id: str = Depends(get_current_user),
 ):
-    save_streak_reward(user_id, payload.reward_title)
-    return {"ok": True, "reward_title": payload.reward_title}
+    save_streak_reward(user_id, payload.reward_id)
+    return {"ok": True, "reward_id": payload.reward_id}
 
 
 @app.get("/api/streak-schedule")

@@ -179,7 +179,7 @@ function RewardDropdown({
   options: Reward[];
   onChange: (v: string) => void;
 }) {
-  const selectedReward = options.find((r) => r.title === value) ?? null;
+  const selectedReward = options.find((r) => r.id === value) ?? null;
 
   return (
     <Autocomplete
@@ -187,7 +187,7 @@ function RewardDropdown({
       options={options}
       value={selectedReward}
       onChange={(_: React.SyntheticEvent, newValue: Reward | null) =>
-        onChange(newValue?.title ?? "")
+        onChange(newValue?.id ?? "")
       }
       getOptionLabel={(option: Reward) => option.title}
       isOptionEqualToValue={(option: Reward, value: Reward) => option.id === value.id}
@@ -297,7 +297,7 @@ export default function Dashboard() {
         setRewards(rewardData);
 
         if (rewardData.length > 0) {
-          setLbReward(rewardData[0].title);
+          setLbReward(rewardData[0].id);
         }
 
         const [pcRes, srRes, schedRes] = await Promise.allSettled([
@@ -314,11 +314,11 @@ export default function Dashboard() {
 
         if (srRes.status === "fulfilled" && srRes.value.ok) {
           const srData = await srRes.value.json();
-          const configured = srData.reward_title;
-          const match = rewardData.find((r) => r.title === configured);
-          setStreakReward(match ? configured : (rewardData[0]?.title ?? ""));
+          const configured = srData.reward_id;
+          const match = rewardData.find((r) => r.id === configured);
+          setStreakReward(match ? configured : (rewardData[0]?.id ?? ""));
         } else {
-          setStreakReward(rewardData[0]?.title ?? "");
+          setStreakReward(rewardData[0]?.id ?? "");
         }
 
         if (schedRes.status === "fulfilled" && schedRes.value.ok) {
@@ -349,7 +349,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!lbReward) return;
     setLbLoading(true);
-    const params = new URLSearchParams({ reward_title: lbReward });
+    const params = new URLSearchParams({ reward_id: lbReward });
     if (lbFrom) params.set("from_date", lbFrom);
     if (lbTo)   params.set("to_date",   lbTo);
     apiFetch(`/api/leaderboard?${params}`)
@@ -398,9 +398,9 @@ export default function Dashboard() {
         };
         setRedemptions((prev) => [r, ...prev].slice(0, MAX_STORED));
         setRewards((prev) =>
-          prev.some((reward) => reward.title === r.reward_title)
+          prev.some((reward) => reward.id === msg.reward_id)
             ? prev
-            : [...prev, { id: r.reward_title, title: r.reward_title }]
+            : [...prev, { id: msg.reward_id, title: r.reward_title }]
         );
       } else if (msg.type === "stream_online") {
         setStreamStatus({
@@ -503,7 +503,7 @@ export default function Dashboard() {
       await apiFetch("/api/streak-reward", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reward_title: pendingStreakReward }),
+        body: JSON.stringify({ reward_id: pendingStreakReward }),
       });
       setStreakReward(pendingStreakReward);
     } catch (e) {
@@ -746,7 +746,7 @@ export default function Dashboard() {
               <>
                 {streakReward && (
                   <Typography sx={{ fontSize: "12px", color: "#a090c0", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {streakReward}
+                    {rewards.find((r) => r.id === streakReward)?.title ?? streakReward}
                   </Typography>
                 )}
                 <Button
