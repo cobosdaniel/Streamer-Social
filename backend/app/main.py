@@ -225,6 +225,7 @@ async def public_points_leaderboard(
             "count_1st":     int(r["count_1st"]),
             "count_2nd":     int(r["count_2nd"]),
             "count_3rd":     int(r["count_3rd"]),
+            "count_lurker":  int(r["count_lurker"]),
             "count_checkin": int(r["count_checkin"]),
         }
         for r in rows
@@ -379,6 +380,7 @@ class PointConfigPayload(BaseModel):
     reward_1st: Optional[str] = None
     reward_2nd: Optional[str] = None
     reward_3rd: Optional[str] = None
+    reward_lurker: Optional[str] = None
 
 
 @app.post("/api/point-config")
@@ -388,7 +390,7 @@ async def set_point_config_endpoint(
     payload: PointConfigPayload,
     user_id: str = Depends(get_current_user),
 ):
-    save_point_config(user_id, payload.reward_1st, payload.reward_2nd, payload.reward_3rd)
+    save_point_config(user_id, payload.reward_1st, payload.reward_2nd, payload.reward_3rd, payload.reward_lurker)
     return {"ok": True}
 
 
@@ -408,6 +410,7 @@ async def points_leaderboard_endpoint(
             "count_1st":     int(r["count_1st"]),
             "count_2nd":     int(r["count_2nd"]),
             "count_3rd":     int(r["count_3rd"]),
+            "count_lurker":  int(r["count_lurker"]),
             "count_checkin": int(r["count_checkin"]),
         }
         for r in rows

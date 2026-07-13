@@ -54,14 +54,16 @@ type PointsEntry = {
   count_1st:     number;
   count_2nd:     number;
   count_3rd:     number;
+  count_lurker:  number;
   count_checkin: number;
 };
 
 type PointConfig = {
-  reward_1st: string | null;
-  reward_2nd: string | null;
-  reward_3rd: string | null;
-  checkin:    string | null;
+  reward_1st:    string | null;
+  reward_2nd:    string | null;
+  reward_3rd:    string | null;
+  reward_lurker: string | null;
+  checkin:       string | null;
 };
 
 type StreakEntry = {
@@ -254,9 +256,9 @@ export default function Dashboard() {
   const [pointsLoading,   setPointsLoading]   = useState(false);
   const [pointsFrom,      setPointsFrom]      = useState("");
   const [pointsTo,        setPointsTo]        = useState("");
-  const [pointConfig,     setPointConfig]     = useState<PointConfig>({ reward_1st: null, reward_2nd: null, reward_3rd: null, checkin: null });
+  const [pointConfig,     setPointConfig]     = useState<PointConfig>({ reward_1st: null, reward_2nd: null, reward_3rd: null, reward_lurker: null, checkin: null });
   const [pointConfigOpen, setPointConfigOpen] = useState(false);
-  const [pendingConfig,   setPendingConfig]   = useState<PointConfig>({ reward_1st: null, reward_2nd: null, reward_3rd: null, checkin: null });
+  const [pendingConfig,   setPendingConfig]   = useState<PointConfig>({ reward_1st: null, reward_2nd: null, reward_3rd: null, reward_lurker: null, checkin: null });
   const [pointConfigSaving, setPointConfigSaving] = useState(false);
 
   const [schedule,        setSchedule]        = useState<ScheduleDay[]>(DAYS.map((d) => ({ day: d, start: "", end: "" })));
@@ -526,9 +528,10 @@ export default function Dashboard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          reward_1st: pendingConfig.reward_1st,
-          reward_2nd: pendingConfig.reward_2nd,
-          reward_3rd: pendingConfig.reward_3rd,
+          reward_1st:    pendingConfig.reward_1st,
+          reward_2nd:    pendingConfig.reward_2nd,
+          reward_3rd:    pendingConfig.reward_3rd,
+          reward_lurker: pendingConfig.reward_lurker,
         }),
       });
       setPointConfig(pendingConfig);
@@ -636,7 +639,7 @@ export default function Dashboard() {
             </Box>
           ) : pointsEntries.length === 0 ? (
             <EmptyState message={
-              pointConfig.reward_1st || pointConfig.reward_2nd || pointConfig.reward_3rd || pointConfig.checkin
+              pointConfig.reward_1st || pointConfig.reward_2nd || pointConfig.reward_3rd || pointConfig.reward_lurker || pointConfig.checkin
                 ? "No points earned yet."
                 : "Configure rewards to start tracking points."
             } />
@@ -670,6 +673,7 @@ export default function Dashboard() {
                         {entry.count_1st     > 0 && <span><span role="img" aria-label="1st place">🥇</span>×{entry.count_1st}</span>}
                         {entry.count_2nd     > 0 && <span><span role="img" aria-label="2nd place">🥈</span>×{entry.count_2nd}</span>}
                         {entry.count_3rd     > 0 && <span><span role="img" aria-label="3rd place">🥉</span>×{entry.count_3rd}</span>}
+                        {entry.count_lurker  > 0 && <span><span role="img" aria-label="Lurker redemptions">👀</span>×{entry.count_lurker}</span>}
                         {entry.count_checkin > 0 && <span><span role="img" aria-label="Check-ins">✓</span>×{entry.count_checkin}</span>}
                       </Typography>
                       <Typography sx={{ fontSize: "14px", fontWeight: 700, color }}>
@@ -980,11 +984,12 @@ export default function Dashboard() {
           <Typography sx={{ mb: 2, fontSize: "13px", color: "#6a5c80" }}>
             Assign your channel point rewards to each placement. Check-in uses the reward configured in Watch Streaks.
           </Typography>
-          {(["reward_1st", "reward_2nd", "reward_3rd"] as const).map((key, i) => {
+          {(["reward_1st", "reward_2nd", "reward_3rd", "reward_lurker"] as const).map((key, i) => {
             const labels = [
               { emoji: "🥇", text: "1st Place (3 pts)" },
               { emoji: "🥈", text: "2nd Place (2 pts)" },
               { emoji: "🥉", text: "3rd Place (1 pt)" },
+              { emoji: "👀", text: "Lurker (0.5 pts)" },
             ];
             return (
               <Box key={key} sx={{ mb: 2 }}>
