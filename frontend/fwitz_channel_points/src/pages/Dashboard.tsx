@@ -794,7 +794,7 @@ export default function Dashboard() {
                       />
                       <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
                         <Typography sx={{ fontSize: "13px", fontWeight: 700, color: streakColor }}>
-                          {entry.streak}s
+                          current: {entry.streak}
                         </Typography>
                         <Typography sx={{ fontSize: "12px", color: "#a090c0" }}>
                           best: {entry.longest_streak}
@@ -1007,7 +1007,11 @@ export default function Dashboard() {
           <Box sx={{ p: 1.5, borderRadius: "8px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
             <Typography sx={{ fontSize: "12px", color: "#6a5c80" }}>
               <span aria-hidden="true">✓</span> Check-in (1 pt):{" "}
-              <span style={{ color: "#c5bcff" }}>{pointConfig.checkin ?? "not configured"}</span>
+              <span style={{ color: "#c5bcff" }}>
+                {pointConfig.checkin
+                  ? (rewards.find((r) => r.id === pointConfig.checkin)?.title ?? pointConfig.checkin)
+                  : "not configured"}
+              </span>
               {!pointConfig.checkin && " — set in Watch Streaks"}
             </Typography>
           </Box>
