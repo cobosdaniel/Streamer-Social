@@ -595,6 +595,22 @@ def get_points_leaderboard(twitch_user_id: str, from_date: str | None = None, to
     return rows
 
 
+def get_redeemed_reward_titles(twitch_user_id: str) -> list[str]:
+    """Distinct reward titles this streamer has ever had redeemed, for the public reward picker."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT DISTINCT reward_title
+        FROM redemptions
+        WHERE twitch_user_id = %s
+        ORDER BY reward_title
+    """, (twitch_user_id,))
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return [r[0] for r in rows]
+
+
 def get_streak_reward(twitch_user_id: str) -> str | None:
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)

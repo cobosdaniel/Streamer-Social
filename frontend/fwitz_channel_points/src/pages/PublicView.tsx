@@ -8,6 +8,7 @@ import Divider from "@mui/material/Divider";
 import Chip from "@mui/material/Chip";
 import Button from "@mui/material/Button";
 import TextField from "@mui/material/TextField";
+import Autocomplete from "@mui/material/Autocomplete";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
@@ -33,6 +34,11 @@ type StreakEntry = {
   streak:         number;
   longest_streak: number;
   updated_at:     string | null;
+};
+
+type TrackerEntry = {
+  user_name: string;
+  count:     number;
 };
 
 type StreamStatus = {
@@ -96,7 +102,7 @@ function SectionCard({
         <Typography variant="h6" sx={{ fontWeight: 600, color: "#f4ecff", fontSize: "15px" }}>
           {title}
         </Typography>
-        {action && <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>{action}</Box>}
+        {action && <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>{action}</Box>}
       </Box>
       <Divider sx={{ borderColor: "rgba(255,255,255,0.07)" }} />
       <Box sx={{ p: 2.5 }}>{children}</Box>
@@ -165,19 +171,51 @@ function QuickDateFilter({
           <TextField
             size="small" type="date" value={value.from}
             onChange={(e) => onChange({ ...value, from: e.target.value })}
-            slotProps={{ htmlInput: { max: value.to || undefined } }}
+            slotProps={{ htmlInput: { max: value.to || undefined, "aria-label": "From date" } }}
             sx={inputSx}
           />
           <Typography sx={{ color: "#6a5c80", fontSize: "11px" }}>–</Typography>
           <TextField
             size="small" type="date" value={value.to}
             onChange={(e) => onChange({ ...value, to: e.target.value })}
-            slotProps={{ htmlInput: { min: value.from || undefined } }}
+            slotProps={{ htmlInput: { min: value.from || undefined, "aria-label": "To date" } }}
             sx={inputSx}
           />
         </Stack>
       )}
     </Stack>
+  );
+}
+
+function RewardDropdown({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <Autocomplete
+      size="small"
+      options={options}
+      value={value || null}
+      onChange={(_: React.SyntheticEvent, newValue: string | null) => onChange(newValue ?? "")}
+      sx={{
+        width: 200,
+        "& .MuiInputBase-root": { color: "#f4ecff", background: "rgba(255,255,255,0.06)", fontSize: "12px" },
+        "& .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255,255,255,0.12)" },
+        "& .MuiSvgIcon-root": { color: "#c5bcff" },
+      }}
+      renderInput={(params: any) => (
+        <TextField
+          {...params}
+          placeholder="Search rewards"
+          slotProps={{ htmlInput: { ...params.inputProps, "aria-label": "Search rewards" } }}
+        />
+      )}
+    />
   );
 }
 
@@ -191,9 +229,14 @@ export default function PublicView() {
   const [pointsLoading, setPointsLoading] = useState(false);
   const [pointsFilter,  setPointsFilter]  = useState<DateFilterState>(ALL_TIME);
 
+  const [rewards,         setRewards]         = useState<string[]>([]);
+  const [selectedReward,  setSelectedReward]  = useState("");
+  const [trackerEntries,  setTrackerEntries]  = useState<TrackerEntry[]>([]);
+  const [trackerLoading,  setTrackerLoading]  = useState(false);
+  const [trackerFilter,   setTrackerFilter]   = useState<DateFilterState>(ALL_TIME);
+
   const [streaks,        setStreaks]        = useState<StreakEntry[]>([]);
   const [streaksLoading, setStreaksLoading] = useState(false);
-  const [streaksFilter,  setStreaksFilter]  = useState<DateFilterState>(ALL_TIME);
 
   const [status, setStatus] = useState<StreamStatus>({ live: false });
 
@@ -233,19 +276,45 @@ export default function PublicView() {
       .finally(() => setPointsLoading(false));
   }, [login, loading, error, pointsFilter.from, pointsFilter.to]);
 
-  // ── Streaks fetch ───────────────────────────────────────────────────────────
+  // ── Redemption Tracker: reward list ─────────────────────────────────────────
+  useEffect(() => {
+    if (!login || loading || error) return;
+    fetch(`${API_BASE}/api/public/${login}/rewards`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: string[]) => {
+        setRewards(data);
+        setSelectedReward((prev) => (prev && data.includes(prev) ? prev : (data[0] ?? "")));
+      })
+      .catch(console.error);
+  }, [login, loading, error]);
+
+  // ── Redemption Tracker: leaderboard for selected reward ─────────────────────
+  useEffect(() => {
+    if (!login || loading || error || !selectedReward) {
+      setTrackerEntries([]);
+      return;
+    }
+    setTrackerLoading(true);
+    const params = new URLSearchParams({ reward_title: selectedReward });
+    if (trackerFilter.from) params.set("from_date", trackerFilter.from);
+    if (trackerFilter.to)   params.set("to_date",   trackerFilter.to);
+    fetch(`${API_BASE}/api/public/${login}/leaderboard?${params}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then(setTrackerEntries)
+      .catch(console.error)
+      .finally(() => setTrackerLoading(false));
+  }, [login, loading, error, selectedReward, trackerFilter.from, trackerFilter.to]);
+
+  // ── Streaks fetch — no date filter, streaks are a running total ─────────────
   useEffect(() => {
     if (!login || loading || error) return;
     setStreaksLoading(true);
-    const params = new URLSearchParams();
-    if (streaksFilter.from) params.set("from_date", streaksFilter.from);
-    if (streaksFilter.to)   params.set("to_date",   streaksFilter.to);
-    fetch(`${API_BASE}/api/public/${login}/streaks?${params}`)
+    fetch(`${API_BASE}/api/public/${login}/streaks`)
       .then((r) => r.ok ? r.json() : [])
       .then(setStreaks)
       .catch(console.error)
       .finally(() => setStreaksLoading(false));
-  }, [login, loading, error, streaksFilter.from, streaksFilter.to]);
+  }, [login, loading, error]);
 
   if (loading) {
     return (
@@ -332,10 +401,10 @@ export default function PublicView() {
                     />
                     <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
                       <Typography sx={{ fontSize: "11px", color: "#6a5c80", display: "flex", gap: 1 }}>
-                        {entry.count_1st     > 0 && <span title="1st place">🥇×{entry.count_1st}</span>}
-                        {entry.count_2nd     > 0 && <span title="2nd place">🥈×{entry.count_2nd}</span>}
-                        {entry.count_3rd     > 0 && <span title="3rd place">🥉×{entry.count_3rd}</span>}
-                        {entry.count_checkin > 0 && <span title="Check-ins">✓×{entry.count_checkin}</span>}
+                        {entry.count_1st     > 0 && <span><span role="img" aria-label="1st place">🥇</span>×{entry.count_1st}</span>}
+                        {entry.count_2nd     > 0 && <span><span role="img" aria-label="2nd place">🥈</span>×{entry.count_2nd}</span>}
+                        {entry.count_3rd     > 0 && <span><span role="img" aria-label="3rd place">🥉</span>×{entry.count_3rd}</span>}
+                        {entry.count_checkin > 0 && <span><span role="img" aria-label="Check-ins">✓</span>×{entry.count_checkin}</span>}
                       </Typography>
                       <Typography sx={{ fontSize: "14px", fontWeight: 700, color }}>
                         {entry.total_points}pts
@@ -349,9 +418,60 @@ export default function PublicView() {
         </SectionCard>
 
         <SectionCard
-          title="Watch Streaks"
-          action={<QuickDateFilter value={streaksFilter} onChange={setStreaksFilter} />}
+          title="Redemption Tracker"
+          action={
+            rewards.length > 0 ? (
+              <>
+                <RewardDropdown value={selectedReward} options={rewards} onChange={setSelectedReward} />
+                <QuickDateFilter value={trackerFilter} onChange={setTrackerFilter} />
+              </>
+            ) : undefined
+          }
         >
+          {rewards.length === 0 ? (
+            <EmptyState message="No redemptions tracked yet." />
+          ) : trackerLoading ? (
+            <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+              <CircularProgress size={24} sx={{ color: "#8b7bff" }} />
+            </Box>
+          ) : trackerEntries.length === 0 ? (
+            <EmptyState message="No redemptions yet for this reward." />
+          ) : (
+            <List disablePadding>
+              {trackerEntries.map((entry, i) => {
+                const rank  = i + 1;
+                const color = medalColors[rank] ?? "#8b7bff";
+                const label = medalLabel[rank]  ?? `#${rank}`;
+                return (
+                  <ListItem
+                    key={entry.user_name}
+                    disableGutters
+                    sx={{
+                      px: 1, py: 0.75, borderRadius: "8px",
+                      background: rank <= 3 ? `${color}12` : "transparent",
+                      mb: 0.5,
+                    }}
+                  >
+                    <Typography sx={{ width: 32, fontSize: "12px", fontWeight: 700, color, flexShrink: 0 }}>
+                      {label}
+                    </Typography>
+                    <ListItemText
+                      primary={entry.user_name}
+                      slotProps={{
+                        primary: { sx: { fontSize: "14px", fontWeight: 600, color: "#f4ecff" } },
+                      }}
+                    />
+                    <Typography sx={{ fontSize: "14px", fontWeight: 700, color }}>
+                      {entry.count}
+                    </Typography>
+                  </ListItem>
+                );
+              })}
+            </List>
+          )}
+        </SectionCard>
+
+        <SectionCard title="Watch Streaks">
           {streaksLoading ? (
             <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
               <CircularProgress size={24} sx={{ color: "#8b7bff" }} />

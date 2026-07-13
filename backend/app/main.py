@@ -16,6 +16,7 @@ from db import (
     get_streak_reward, save_streak_reward,
     get_point_config, save_point_config, get_points_leaderboard,
     get_streamer_by_login, get_active_session,
+    get_redeemed_reward_titles,
 )
 import os
 import logging
@@ -228,6 +229,45 @@ async def public_points_leaderboard(
         }
         for r in rows
     ]
+
+
+@app.get("/api/public/{login}/rewards")
+@limiter.limit("60/minute")
+async def public_rewards(request: Request, login: str):
+    user_id = resolve_streamer(login)
+    return get_redeemed_reward_titles(user_id)
+
+
+@app.get("/api/public/{login}/leaderboard")
+@limiter.limit("60/minute")
+async def public_leaderboard(
+    request: Request,
+    login: str,
+    reward_title: str,
+    from_date: str | None = None,
+    to_date:   str | None = None,
+):
+    user_id = resolve_streamer(login)
+    conn   = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    query  = "SELECT user_name, COUNT(*) AS count FROM redemptions WHERE twitch_user_id = %s AND reward_title = %s"
+    params: list = [user_id, reward_title]
+
+    if from_date:
+        query += " AND redeemed_at >= %s"
+        params.append(from_date)
+    if to_date:
+        query += " AND redeemed_at < DATE_ADD(%s, INTERVAL 1 DAY)"
+        params.append(to_date)
+
+    query += " GROUP BY user_name ORDER BY count DESC LIMIT 20"
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
 
 
 @app.get("/api/public/{login}/streaks")
