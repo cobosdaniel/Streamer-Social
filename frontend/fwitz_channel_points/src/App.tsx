@@ -3,6 +3,7 @@ import { Link, Routes, Route, Navigate, useLocation } from "react-router-dom";
 
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
+import PublicView from "./pages/PublicView";
 import ProtectedRoute from "./pages/ProtectedRoute";
 import Footer from "./components/Footer";
 import LoginModal from "./components/LoginModal";
@@ -282,6 +283,7 @@ export default function App() {
           <Route path="/about" element={<Navigate to="/#about" replace />} />
           <Route path="/contact" element={<Navigate to="/#contact" replace />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
+          <Route path="/view/:login" element={<PublicView />} />
 
           <Route
             path="/dashboard"

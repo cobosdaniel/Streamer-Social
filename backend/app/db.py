@@ -38,6 +38,19 @@ def upsert_streamer(twitch_user_id, login, client_id):
     cursor.close()
     conn.close()
 
+def get_streamer_by_login(login: str) -> dict | None:
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT twitch_user_id, login FROM streamers WHERE login = %s",
+        (login,),
+    )
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return row
+
+
 def save_tokens(twitch_user_id, access_token, refresh_token, expires_in, scopes):
     conn = get_connection()
     cursor = conn.cursor()

@@ -15,6 +15,7 @@ from db import (
     refresh_access_token,
     get_streak_reward, save_streak_reward,
     get_point_config, save_point_config, get_points_leaderboard,
+    get_streamer_by_login, get_active_session,
 )
 import os
 import logging
@@ -196,6 +197,72 @@ async def get_streaks(
         }
         for r in rows
     ]
+
+# ── Public (viewer-facing, no auth) ─────────────────────────────────────────────
+
+def resolve_streamer(login: str) -> str:
+    streamer = get_streamer_by_login(login)
+    if not streamer:
+        raise HTTPException(status_code=404, detail="Streamer not found")
+    return streamer["twitch_user_id"]
+
+
+@app.get("/api/public/{login}/points-leaderboard")
+@limiter.limit("60/minute")
+async def public_points_leaderboard(
+    request: Request,
+    login: str,
+    from_date: str | None = None,
+    to_date:   str | None = None,
+):
+    user_id = resolve_streamer(login)
+    rows = get_points_leaderboard(user_id, from_date=from_date, to_date=to_date)
+    return [
+        {
+            "user_name":     r["user_name"],
+            "total_points":  float(r["total_points"]),
+            "count_1st":     int(r["count_1st"]),
+            "count_2nd":     int(r["count_2nd"]),
+            "count_3rd":     int(r["count_3rd"]),
+            "count_checkin": int(r["count_checkin"]),
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/public/{login}/streaks")
+@limiter.limit("60/minute")
+async def public_streaks(
+    request: Request,
+    login: str,
+    from_date: str | None = None,
+    to_date:   str | None = None,
+):
+    user_id = resolve_streamer(login)
+    rows = get_viewer_streaks(user_id, limit=20, from_date=from_date, to_date=to_date)
+    return [
+        {
+            "user_name":      r["user_name"],
+            "streak":         r["current_streak"],
+            "longest_streak": r["longest_streak"],
+            "updated_at":     r["updated_at"].isoformat() + "Z" if r["updated_at"] else None,
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/public/{login}/status")
+@limiter.limit("60/minute")
+async def public_status(request: Request, login: str):
+    user_id = resolve_streamer(login)
+    session = get_active_session(user_id)
+    if not session:
+        return {"live": False}
+    return {
+        "live":       True,
+        "started_at": session["started_at"].isoformat() + "Z" if session["started_at"] else None,
+    }
+
 
 # ── Rewards ─────────────────────────────────────────────────
 
