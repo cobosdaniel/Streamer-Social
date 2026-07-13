@@ -234,13 +234,14 @@ def run_tracker_for_streamer(streamer, shutdown_event=None):
                 notify_backend(broadcaster_id, "redemption", {
                     "user_id":      user_id,
                     "user_name":    user_name,
+                    "reward_id":    reward_id,
                     "reward_title": reward_title,
                     "redeemed_at":  redeemed_at,
                     "status":       status,
                 })
 
                 streak_reward = get_streak_reward(broadcaster_id)
-                if streak_reward and reward_title == streak_reward and db_session_id is not None:
+                if streak_reward and reward_id == streak_reward and db_session_id is not None:
                     updated = update_viewer_streak_on_redemption(
                         broadcaster_id, user_id, user_name, db_session_id
                     )

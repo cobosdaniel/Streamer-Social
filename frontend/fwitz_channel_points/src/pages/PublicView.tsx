@@ -20,6 +20,11 @@ const API_BASE = import.meta.env.VITE_API_URL;
 const medalColors: Record<number, string> = { 1: "#FFD700", 2: "#C0C0C0", 3: "#CD7F32" };
 const medalLabel:  Record<number, string> = { 1: "1st",     2: "2nd",     3: "3rd"     };
 
+type Reward = {
+  id:    string;
+  title: string;
+};
+
 type PointsEntry = {
   user_name: string;
   total_points:  number;
@@ -194,15 +199,19 @@ function RewardDropdown({
   onChange,
 }: {
   value: string;
-  options: string[];
+  options: Reward[];
   onChange: (v: string) => void;
 }) {
+  const selectedReward = options.find((r) => r.id === value) ?? null;
+
   return (
     <Autocomplete
       size="small"
       options={options}
-      value={value || null}
-      onChange={(_: React.SyntheticEvent, newValue: string | null) => onChange(newValue ?? "")}
+      value={selectedReward}
+      onChange={(_: React.SyntheticEvent, newValue: Reward | null) => onChange(newValue?.id ?? "")}
+      getOptionLabel={(option: Reward) => option.title}
+      isOptionEqualToValue={(option: Reward, value: Reward) => option.id === value.id}
       sx={{
         width: 200,
         "& .MuiInputBase-root": { color: "#f4ecff", background: "rgba(255,255,255,0.06)", fontSize: "12px" },
@@ -233,7 +242,7 @@ export default function PublicView() {
   const [pointsLoading, setPointsLoading] = useState(false);
   const [pointsFilter,  setPointsFilter]  = useState<DateFilterState>(ALL_TIME);
 
-  const [rewards,         setRewards]         = useState<string[]>([]);
+  const [rewards,         setRewards]         = useState<Reward[]>([]);
   const [selectedReward,  setSelectedReward]  = useState("");
   const [trackerEntries,  setTrackerEntries]  = useState<TrackerEntry[]>([]);
   const [trackerLoading,  setTrackerLoading]  = useState(false);
@@ -285,9 +294,11 @@ export default function PublicView() {
     if (!login || loading || error) return;
     fetch(`${API_BASE}/api/public/${login}/rewards`)
       .then((r) => r.ok ? r.json() : [])
-      .then((data: string[]) => {
+      .then((data: Reward[]) => {
         setRewards(data);
-        setSelectedReward((prev) => (prev && data.includes(prev) ? prev : (data[0] ?? "")));
+        setSelectedReward((prev) =>
+          prev && data.some((r) => r.id === prev) ? prev : (data[0]?.id ?? "")
+        );
       })
       .catch(console.error);
   }, [login, loading, error]);
@@ -299,7 +310,7 @@ export default function PublicView() {
       return;
     }
     setTrackerLoading(true);
-    const params = new URLSearchParams({ reward_title: selectedReward });
+    const params = new URLSearchParams({ reward_id: selectedReward });
     if (trackerFilter.from) params.set("from_date", trackerFilter.from);
     if (trackerFilter.to)   params.set("to_date",   trackerFilter.to);
     fetch(`${API_BASE}/api/public/${login}/leaderboard?${params}`)
