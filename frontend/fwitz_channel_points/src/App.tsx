@@ -54,6 +54,16 @@ export default function App() {
     };
   }, []);
 
+  // Escape is the keyboard equivalent of the outside-click that closes the profile menu.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [menuOpen]);
+
   const checkAuth = async () => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -122,6 +132,7 @@ export default function App() {
     if (!user) return null;
 
     return (
+      // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- stops click-outside propagation only, not an interactive action itself
       <div
         className="profile-menu-wrapper"
         style={{ position: "relative" }}
@@ -130,6 +141,8 @@ export default function App() {
         <button
           onClick={toggleMenu}
           className="profile-trigger"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
           style={{
             display: "flex",
             alignItems: "center",

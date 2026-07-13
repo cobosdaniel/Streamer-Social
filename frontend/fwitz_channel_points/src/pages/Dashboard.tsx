@@ -147,14 +147,14 @@ function DateRangeFilter({
       <TextField
         size="small" type="date" value={from}
         onChange={(e) => onFromChange(e.target.value)}
-        slotProps={{ htmlInput: { max: to || undefined } }}
+        slotProps={{ htmlInput: { max: to || undefined, "aria-label": "From date" } }}
         sx={inputSx}
       />
       <Typography sx={{ color: "#6a5c80", fontSize: "11px" }}>–</Typography>
       <TextField
         size="small" type="date" value={to}
         onChange={(e) => onToChange(e.target.value)}
-        slotProps={{ htmlInput: { min: from || undefined } }}
+        slotProps={{ htmlInput: { min: from || undefined, "aria-label": "To date" } }}
         sx={inputSx}
       />
       {(from || to) && (
@@ -204,7 +204,11 @@ function RewardDropdown({
         },
       }}
       renderInput={(params: any) => (
-        <TextField {...params} placeholder="Search rewards" />
+        <TextField
+          {...params}
+          placeholder="Search rewards"
+          slotProps={{ htmlInput: { ...params.inputProps, "aria-label": "Search rewards" } }}
+        />
       )}
     />
   );
@@ -660,10 +664,10 @@ export default function Dashboard() {
                     />
                     <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
                       <Typography sx={{ fontSize: "11px", color: "#6a5c80", display: "flex", gap: 1 }}>
-                        {entry.count_1st     > 0 && <span title="1st place">🥇×{entry.count_1st}</span>}
-                        {entry.count_2nd     > 0 && <span title="2nd place">🥈×{entry.count_2nd}</span>}
-                        {entry.count_3rd     > 0 && <span title="3rd place">🥉×{entry.count_3rd}</span>}
-                        {entry.count_checkin > 0 && <span title="Check-ins">✓×{entry.count_checkin}</span>}
+                        {entry.count_1st     > 0 && <span><span role="img" aria-label="1st place">🥇</span>×{entry.count_1st}</span>}
+                        {entry.count_2nd     > 0 && <span><span role="img" aria-label="2nd place">🥈</span>×{entry.count_2nd}</span>}
+                        {entry.count_3rd     > 0 && <span><span role="img" aria-label="3rd place">🥉</span>×{entry.count_3rd}</span>}
+                        {entry.count_checkin > 0 && <span><span role="img" aria-label="Check-ins">✓</span>×{entry.count_checkin}</span>}
                       </Typography>
                       <Typography sx={{ fontSize: "14px", fontWeight: 700, color }}>
                         {entry.total_points}pts
@@ -888,6 +892,7 @@ export default function Dashboard() {
                               value={entry?.start ?? ""}
                               onChange={(e) => updateWindow(day, "start", e.target.value)}
                               style={timeInputSx}
+                              aria-label={`${day} window start time`}
                             />
                             <Typography sx={{ fontSize: "12px", color: "#6a5c80" }}>→</Typography>
                             <input
@@ -895,6 +900,7 @@ export default function Dashboard() {
                               value={entry?.end ?? ""}
                               onChange={(e) => updateWindow(day, "end", e.target.value)}
                               style={timeInputSx}
+                              aria-label={`${day} window end time`}
                             />
                           </Stack>
                         )}
@@ -919,37 +925,39 @@ export default function Dashboard() {
             </Typography>
           }
         >
-          {redemptions.length === 0 ? (
-            <EmptyState message="No redemptions yet." />
-          ) : (
-            <Box sx={{ overflowY: "auto", maxHeight: `${VISIBLE_COUNT * 38}px` }}>
-              <List disablePadding>
-                {redemptions.map((r, i) => (
-                  <ListItem
-                    key={i}
-                    disableGutters
-                    sx={{
-                      px: 1, py: 0.75, borderRadius: "6px",
-                      background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
-                    }}
-                  >
-                    <Typography sx={{ width: 140, fontSize: "13px", fontWeight: 600, color: "#f4ecff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 0 }}>
-                      {r.user_name}
-                    </Typography>
-                    <ListItemText
-                      primary={r.reward_title}
-                      slotProps={{
-                        primary: { sx: { fontSize: "13px", color: "#cbbce4", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+          <Box aria-live="polite" aria-atomic="false">
+            {redemptions.length === 0 ? (
+              <EmptyState message="No redemptions yet." />
+            ) : (
+              <Box sx={{ overflowY: "auto", maxHeight: `${VISIBLE_COUNT * 38}px` }}>
+                <List disablePadding>
+                  {redemptions.map((r, i) => (
+                    <ListItem
+                      key={`${r.redeemed_at}-${r.user_name}-${r.reward_title}`}
+                      disableGutters
+                      sx={{
+                        px: 1, py: 0.75, borderRadius: "6px",
+                        background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
                       }}
-                    />
-                    <Typography sx={{ fontSize: "12px", color: "#6a5c80", whiteSpace: "nowrap", flexShrink: 0 }}>
-                      {new Date(r.redeemed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </Typography>
-                  </ListItem>
-                ))}
-              </List>
-            </Box>
-          )}
+                    >
+                      <Typography sx={{ width: 140, fontSize: "13px", fontWeight: 600, color: "#f4ecff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 0 }}>
+                        {r.user_name}
+                      </Typography>
+                      <ListItemText
+                        primary={r.reward_title}
+                        slotProps={{
+                          primary: { sx: { fontSize: "13px", color: "#cbbce4", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                        }}
+                      />
+                      <Typography sx={{ fontSize: "12px", color: "#6a5c80", whiteSpace: "nowrap", flexShrink: 0 }}>
+                        {new Date(r.redeemed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </Typography>
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            )}
+          </Box>
         </SectionCard>
       </Stack>
 
@@ -970,10 +978,16 @@ export default function Dashboard() {
             Assign your channel point rewards to each placement. Check-in uses the reward configured in Watch Streaks.
           </Typography>
           {(["reward_1st", "reward_2nd", "reward_3rd"] as const).map((key, i) => {
-            const labels = ["🥇 1st Place (3 pts)", "🥈 2nd Place (2 pts)", "🥉 3rd Place (1 pt)"];
+            const labels = [
+              { emoji: "🥇", text: "1st Place (3 pts)" },
+              { emoji: "🥈", text: "2nd Place (2 pts)" },
+              { emoji: "🥉", text: "3rd Place (1 pt)" },
+            ];
             return (
               <Box key={key} sx={{ mb: 2 }}>
-                <Typography sx={{ mb: 0.5, fontSize: "13px", fontWeight: 600, color: "#c5bcff" }}>{labels[i]}</Typography>
+                <Typography sx={{ mb: 0.5, fontSize: "13px", fontWeight: 600, color: "#c5bcff" }}>
+                  <span aria-hidden="true">{labels[i].emoji}</span> {labels[i].text}
+                </Typography>
                 <RewardDropdown
                   value={pendingConfig[key] ?? ""}
                   options={rewards}
@@ -984,7 +998,7 @@ export default function Dashboard() {
           })}
           <Box sx={{ p: 1.5, borderRadius: "8px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
             <Typography sx={{ fontSize: "12px", color: "#6a5c80" }}>
-              ✓ Check-in (1 pt):{" "}
+              <span aria-hidden="true">✓</span> Check-in (1 pt):{" "}
               <span style={{ color: "#c5bcff" }}>{pointConfig.checkin ?? "not configured"}</span>
               {!pointConfig.checkin && " — set in Watch Streaks"}
             </Typography>
