@@ -26,6 +26,7 @@ type PointsEntry = {
   count_1st:     number;
   count_2nd:     number;
   count_3rd:     number;
+  count_lurker:  number;
   count_checkin: number;
 };
 
@@ -407,6 +408,7 @@ export default function PublicView() {
                         {entry.count_1st     > 0 && <span><span role="img" aria-label="1st place">🥇</span>×{entry.count_1st}</span>}
                         {entry.count_2nd     > 0 && <span><span role="img" aria-label="2nd place">🥈</span>×{entry.count_2nd}</span>}
                         {entry.count_3rd     > 0 && <span><span role="img" aria-label="3rd place">🥉</span>×{entry.count_3rd}</span>}
+                        {entry.count_lurker  > 0 && <span><span role="img" aria-label="Lurker redemptions">👀</span>×{entry.count_lurker}</span>}
                         {entry.count_checkin > 0 && <span><span role="img" aria-label="Check-ins">✓</span>×{entry.count_checkin}</span>}
                       </Typography>
                       <Typography sx={{ fontSize: "14px", fontWeight: 700, color }}>
