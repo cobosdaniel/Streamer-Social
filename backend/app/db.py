@@ -638,6 +638,7 @@ def save_streak_reward(twitch_user_id: str, reward_id: str):
 
 
 # ── Sessions ───────────────────────────────────────────────────────────────────
+# 24-hour TTL enforced at the app layer (see /auth/logout and /api/me)
 
 def _ensure_sessions_table():
     conn = get_connection()
