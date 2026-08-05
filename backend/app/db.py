@@ -550,11 +550,13 @@ def get_points_leaderboard(twitch_user_id: str, from_date: str | None = None, to
             continue
         if tag == "lurker":
             # Twitch has no per-user cooldown, so enforce it here:
-            # each viewer earns at most one lurker credit per stream session.
+            # bucket redemptions into 30-minute windows; each viewer earns
+            # at most one lurker credit per window, no matter how many times
+            # they hit redeem within that period.
             unions.append(f"""
                 SELECT user_name, 'lurker' AS reward_title_tag,
-                       COUNT(DISTINCT session_id) AS cnt,
-                       COUNT(DISTINCT session_id) * 0.5 AS points
+                       COUNT(DISTINCT FLOOR(UNIX_TIMESTAMP(redeemed_at) / 1800)) AS cnt,
+                       COUNT(DISTINCT FLOOR(UNIX_TIMESTAMP(redeemed_at) / 1800)) * 0.5 AS points
                 FROM redemptions
                 WHERE twitch_user_id = %s AND reward_id = %s{date_filter}
                   AND session_id IS NOT NULL
