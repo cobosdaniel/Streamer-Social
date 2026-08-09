@@ -9,3 +9,4 @@ requests
 websockets
 slowapi
 tzdata
+cryptography
