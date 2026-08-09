@@ -546,14 +546,30 @@ def get_points_leaderboard(twitch_user_id: str, from_date: str | None = None, to
         (reward_3rd, 1, "3rd"), (reward_lurker, 0.5, "lurker"),
         (checkin, 1, "checkin"),
     ]:
-        if reward:
+        if not reward:
+            continue
+        if tag == "lurker":
+            # Twitch has no per-user cooldown, so enforce it here:
+            # bucket redemptions into 30-minute windows; each viewer earns
+            # at most one lurker credit per window, no matter how many times
+            # they hit redeem within that period.
+            unions.append(f"""
+                SELECT user_name, 'lurker' AS reward_title_tag,
+                       COUNT(DISTINCT FLOOR(UNIX_TIMESTAMP(redeemed_at) / 1800)) AS cnt,
+                       COUNT(DISTINCT FLOOR(UNIX_TIMESTAMP(redeemed_at) / 1800)) * 0.5 AS points
+                FROM redemptions
+                WHERE twitch_user_id = %s AND reward_id = %s{date_filter}
+                  AND session_id IS NOT NULL
+                GROUP BY user_name
+            """)
+        else:
             unions.append(f"""
                 SELECT user_name, '{tag}' AS reward_title_tag, COUNT(*) AS cnt, COUNT(*) * {points} AS points
                 FROM redemptions
                 WHERE twitch_user_id = %s AND reward_id = %s{date_filter}
                 GROUP BY user_name
             """)
-            params += [twitch_user_id, reward] + date_params
+        params += [twitch_user_id, reward] + date_params
 
     query = f"""
         SELECT user_name,
@@ -638,6 +654,7 @@ def save_streak_reward(twitch_user_id: str, reward_id: str):
 
 
 # ── Sessions ───────────────────────────────────────────────────────────────────
+# 24-hour TTL enforced at the app layer (see /auth/logout and /api/me)
 
 def _ensure_sessions_table():
     conn = get_connection()
