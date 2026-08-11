@@ -1,14 +1,18 @@
 import os
 import time
 import json
+import logging
 import requests
 import mysql.connector
 import mysql.connector.pooling
+from cryptography.fernet import Fernet, InvalidToken
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 load_dotenv("db.env")
 
-for _var in ("DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"):
+for _var in ("DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "TOKEN_ENCRYPTION_KEY"):
     assert os.getenv(_var), f"Missing required environment variable: {_var}"
 
 _pool = mysql.connector.pooling.MySQLConnectionPool(
@@ -20,6 +24,28 @@ _pool = mysql.connector.pooling.MySQLConnectionPool(
     password=os.getenv("DB_PASSWORD"),
     database=os.getenv("DB_NAME"),
 )
+
+_fernet = Fernet(os.environ["TOKEN_ENCRYPTION_KEY"])
+
+
+def _encrypt_token(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return _fernet.encrypt(value.encode()).decode()
+
+
+def _decrypt_token(value: str | None) -> str | None:
+    """Decrypt a stored OAuth token. Falls back to returning the raw value for
+    rows written before encryption was added, so existing sessions keep working
+    until they're naturally rewritten (e.g. on next token refresh)."""
+    if value is None:
+        return None
+    try:
+        return _fernet.decrypt(value.encode()).decode()
+    except InvalidToken:
+        logger.warning("Token not encrypted (legacy plaintext row) — will be re-encrypted on next write")
+        return value
+
 
 def get_connection():
     return _pool.get_connection()
@@ -51,6 +77,28 @@ def get_streamer_by_login(login: str) -> dict | None:
     return row
 
 
+def _ensure_token_columns_are_text():
+    """Encrypted tokens are longer than raw ones — widen the columns so they
+    aren't silently truncated."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    for col in ("access_token", "refresh_token"):
+        cursor.execute("""
+            SELECT DATA_TYPE FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME   = 'tokens'
+              AND COLUMN_NAME  = %s
+        """, (col,))
+        row = cursor.fetchone()
+        if row and row[0] != "text":
+            cursor.execute(f"ALTER TABLE tokens MODIFY COLUMN {col} TEXT NOT NULL")
+            conn.commit()
+    cursor.close()
+    conn.close()
+
+_ensure_token_columns_are_text()
+
+
 def save_tokens(twitch_user_id, access_token, refresh_token, expires_in, scopes):
     conn = get_connection()
     cursor = conn.cursor()
@@ -62,7 +110,13 @@ def save_tokens(twitch_user_id, access_token, refresh_token, expires_in, scopes)
             refresh_token = VALUES(refresh_token),
             expires_in = VALUES(expires_in),
             scopes = VALUES(scopes)
-    """, (twitch_user_id, access_token, refresh_token, expires_in, ",".join(scopes)))
+    """, (
+        twitch_user_id,
+        _encrypt_token(access_token),
+        _encrypt_token(refresh_token),
+        expires_in,
+        ",".join(scopes),
+    ))
     conn.commit()
     cursor.close()
     conn.close()
@@ -709,6 +763,55 @@ def delete_session(session_token):
     conn.close()
 
 
+# ── Data deletion (account erasure) ─────────────────────────────────────────────
+
+def delete_streamer_account(twitch_user_id: str):
+    """Permanently erase a streamer and every row keyed to their channel,
+    including viewer redemption/streak history collected on it."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        conn.start_transaction()
+        cursor.execute("DELETE FROM sessions WHERE twitch_user_id = %s", (twitch_user_id,))
+        cursor.execute("DELETE FROM tokens WHERE twitch_user_id = %s", (twitch_user_id,))
+        cursor.execute("DELETE FROM redemptions WHERE twitch_user_id = %s", (twitch_user_id,))
+        cursor.execute("DELETE FROM viewer_streaks WHERE twitch_user_id = %s", (twitch_user_id,))
+        cursor.execute("DELETE FROM stream_sessions WHERE twitch_user_id = %s", (twitch_user_id,))
+        cursor.execute("DELETE FROM streak_schedules WHERE twitch_user_id = %s", (twitch_user_id,))
+        cursor.execute("DELETE FROM streamers WHERE twitch_user_id = %s", (twitch_user_id,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def delete_viewer_data(twitch_user_id: str, viewer_twitch_id: str):
+    """Erase one viewer's redemption and streak history on a single streamer's
+    channel — for handling an individual viewer's deletion request."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        conn.start_transaction()
+        cursor.execute(
+            "DELETE FROM redemptions WHERE twitch_user_id = %s AND user_id = %s",
+            (twitch_user_id, viewer_twitch_id),
+        )
+        cursor.execute(
+            "DELETE FROM viewer_streaks WHERE twitch_user_id = %s AND viewer_twitch_id = %s",
+            (twitch_user_id, viewer_twitch_id),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # ── Token cache helpers ────────────────────────────────────────────────────────
 
 def get_user_token_data(twitch_user_id):
@@ -727,8 +830,8 @@ def get_user_token_data(twitch_user_id):
     if not row:
         return None
     return {
-        "access_token":  row["access_token"],
-        "refresh_token": row["refresh_token"],
+        "access_token":  _decrypt_token(row["access_token"]),
+        "refresh_token": _decrypt_token(row["refresh_token"]),
         "expires_in":    row["expires_in"],
         "scopes":        row["scopes"].split(",") if row["scopes"] else [],
         "client_id":     row["client_id"],
@@ -750,8 +853,8 @@ def load_all_user_tokens():
     conn.close()
     return {
         r["twitch_user_id"]: {
-            "access_token":  r["access_token"],
-            "refresh_token": r["refresh_token"],
+            "access_token":  _decrypt_token(r["access_token"]),
+            "refresh_token": _decrypt_token(r["refresh_token"]),
             "expires_in":    r["expires_in"],
             "scopes":        r["scopes"].split(",") if r["scopes"] else [],
             "client_id":     r["client_id"],
@@ -775,7 +878,7 @@ def refresh_access_token(twitch_user_id: str) -> str | None:
         conn.close()
         return None
 
-    refresh_token = row["refresh_token"]
+    refresh_token = _decrypt_token(row["refresh_token"])
     res = requests.post("https://id.twitch.tv/oauth2/token", params={
         "grant_type":    "refresh_token",
         "refresh_token": refresh_token,
@@ -795,7 +898,7 @@ def refresh_access_token(twitch_user_id: str) -> str | None:
     cursor.execute("""
         UPDATE tokens SET access_token = %s, refresh_token = %s
         WHERE twitch_user_id = %s
-    """, (new_access, new_refresh, twitch_user_id))
+    """, (_encrypt_token(new_access), _encrypt_token(new_refresh), twitch_user_id))
     conn.commit()
     cursor.close()
     conn.close()

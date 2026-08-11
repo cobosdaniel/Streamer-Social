@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Link } from "react-router-dom";
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -75,8 +76,10 @@ export default function LoginModal({ open, onClose }: Props) {
         </button>
 
         <p className="modal-fine">
-          By signing in you agree to Twitch's terms of service. We only request
-          read access to your channel points.
+          By signing in you agree to Twitch's terms of service and our{" "}
+          <Link to="/terms" onClick={onClose}>Terms of Service</Link> and{" "}
+          <Link to="/privacy" onClick={onClose}>Privacy Policy</Link>. We only
+          request read access to your channel points.
         </p>
       </div>
     </div>

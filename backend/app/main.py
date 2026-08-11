@@ -17,6 +17,7 @@ from db import (
     get_point_config, save_point_config, get_points_leaderboard,
     get_streamer_by_login, get_active_session,
     get_redeemed_rewards,
+    delete_streamer_account, delete_viewer_data,
 )
 import os
 import logging
@@ -30,7 +31,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 import httpx
-from tracker_manager import start_tracker, stop_all_trackers
+from tracker_manager import start_tracker, stop_all_trackers, stop_tracker
 from typing import Optional
 
 load_dotenv("user_oauth.env")
@@ -67,6 +68,7 @@ def get_user_tokens(twitch_user_id: str) -> dict | None:
 AUTH_URL     = "https://id.twitch.tv/oauth2/authorize"
 TOKEN_URL    = "https://id.twitch.tv/oauth2/token"
 VALIDATE_URL = "https://id.twitch.tv/oauth2/validate"
+REVOKE_URL   = "https://id.twitch.tv/oauth2/revoke"
 
 
 class ConnectionManager:
@@ -198,6 +200,15 @@ async def get_streaks(
         }
         for r in rows
     ]
+
+
+@app.delete("/api/viewers/{viewer_id}")
+@limiter.limit("20/minute")
+async def delete_viewer(request: Request, viewer_id: str, user_id: str = Depends(get_current_user)):
+    """Erase a single viewer's redemption/streak history on this streamer's
+    channel — for handling a viewer's own deletion request."""
+    delete_viewer_data(user_id, viewer_id)
+    return {"message": "Viewer data deleted"}
 
 # ── Public (viewer-facing, no auth) ─────────────────────────────────────────────
 
@@ -439,12 +450,15 @@ async def set_streak_reward_endpoint(
 
 
 @app.get("/api/streak-schedule")
-async def get_schedule(user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_schedule(request: Request, user_id: str = Depends(get_current_user)):
     sched = get_streak_schedule(user_id)
     return {"scheduled_days": sched["days"], "timezone": sched["timezone"]}
 
 @app.post("/api/streak-schedule")
+@limiter.limit("20/minute")
 async def update_schedule(
+    request: Request,
     payload: StreakSchedulePayload,
     user_id: str = Depends(get_current_user),
 ):
@@ -499,6 +513,7 @@ def twitch_login_url(request: Request):
     return JSONResponse({"auth_url": build_auth_url(["channel:read:redemptions"])})
 
 @app.post("/auth/logout")
+@limiter.limit("20/minute")
 def logout(request: Request):
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
@@ -515,11 +530,39 @@ def logout(request: Request):
     return response
 
 @app.get("/api/me")
-async def me(user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def me(request: Request, user_id: str = Depends(get_current_user)):
     user_data = get_user_tokens(user_id)
     if not user_data:
         raise HTTPException(status_code=404, detail="User data not found")
     return {"login": user_data.get("login"), "broadcaster_id": user_id}
+
+
+@app.delete("/api/account")
+@limiter.limit("5/minute")
+async def delete_account(request: Request, user_id: str = Depends(get_current_user)):
+    """Permanently delete the streamer's account and every row tied to their
+    channel (tokens, redemptions, streaks, sessions, schedule/reward config)."""
+    token_data = get_user_tokens(user_id)
+
+    stop_tracker(user_id)
+
+    if token_data and token_data.get("access_token"):
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(REVOKE_URL, params={
+                    "client_id": token_data.get("client_id") or TWITCH_CLIENT_ID,
+                    "token": token_data["access_token"],
+                })
+        except Exception as e:
+            logger.warning("Twitch token revoke failed for %s: %s", user_id, e)
+
+    delete_streamer_account(user_id)
+    user_tokens.pop(user_id, None)
+
+    response = JSONResponse({"message": "Account and all associated data deleted"})
+    response.delete_cookie(key="session_token", httponly=True, samesite="lax")
+    return response
 
 @app.get("/auth/twitch/callback")
 @limiter.limit("20/minute")
@@ -616,7 +659,8 @@ async def exchange_token_for_session(request: Request, token: str = Query(...)):
 
 
 @app.get("/api/dashboard")
-async def dashboard(user_id: str = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def dashboard(request: Request, user_id: str = Depends(get_current_user)):
     user_data = get_user_tokens(user_id)
     if not user_data:
         raise HTTPException(status_code=404, detail="User data not found")
@@ -668,18 +712,13 @@ async def push_event(payload: dict, _: None = Depends(verify_internal_key)):
 def startup_event():
     user_tokens.update(load_all_user_tokens())
 
-    conn   = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("""
-        SELECT s.twitch_user_id, s.client_id, t.access_token
-        FROM streamers s
-        JOIN tokens t ON s.twitch_user_id = t.twitch_user_id
-    """)
-    streamers = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    for s in streamers:
-        start_tracker(s)
+    for uid, data in user_tokens.items():
+        start_tracker({
+            "twitch_user_id": uid,
+            "access_token":   data["access_token"],
+            "client_id":      data["client_id"],
+            "login":          data["login"],
+        })
 
 
 @app.on_event("shutdown")

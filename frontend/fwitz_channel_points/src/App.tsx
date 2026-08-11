@@ -4,6 +4,8 @@ import { Link, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import PublicView from "./pages/PublicView";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsOfService from "./pages/TermsOfService";
 import ProtectedRoute from "./pages/ProtectedRoute";
 import Footer from "./components/Footer";
 import LoginModal from "./components/LoginModal";
@@ -44,6 +46,9 @@ export default function App() {
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -63,6 +68,15 @@ export default function App() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!deleteConfirmOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !deleting) setDeleteConfirmOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [deleteConfirmOpen, deleting]);
 
   const checkAuth = async () => {
     try {
@@ -116,6 +130,27 @@ export default function App() {
       window.location.href = "/";
     } catch (error) {
       console.error("Logout failed:", error);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const response = await apiFetch("/api/account", { method: "DELETE" });
+      if (!response.ok) {
+        throw new Error(`Request failed (${response.status})`);
+      }
+      clearSessionToken();
+      setUser(null);
+      setDeleteConfirmOpen(false);
+      setMenuOpen(false);
+      window.location.href = "/";
+    } catch (error) {
+      console.error("Account deletion failed:", error);
+      setDeleteError("Something went wrong deleting your account. Please try again.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -235,8 +270,113 @@ export default function App() {
             >
               Log Out
             </button>
+
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                setDeleteError(null);
+                setDeleteConfirmOpen(true);
+              }}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                marginTop: "2px",
+                padding: "10px 12px",
+                borderRadius: "10px",
+                border: "none",
+                background: "transparent",
+                color: "rgba(255,255,255,0.45)",
+                cursor: "pointer",
+                fontWeight: "600",
+                fontSize: "13px",
+              }}
+            >
+              Delete Account
+            </button>
           </div>
         )}
+      </div>
+    );
+  };
+
+  const renderDeleteConfirm = () => {
+    if (!deleteConfirmOpen) return null;
+
+    return (
+      // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events -- backdrop dismiss only; Escape is handled above and focus stays on the dialog's real buttons
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-account-title"
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.6)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 2000,
+        }}
+        onClick={() => !deleting && setDeleteConfirmOpen(false)}
+      >
+        {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- stops click-outside propagation only, not an interactive action itself */}
+        <div
+          style={{
+            background: "#1f1f23",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: "14px",
+            padding: "24px",
+            width: "90%",
+            maxWidth: "420px",
+            boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 id="delete-account-title" style={{ margin: "0 0 12px", color: "#fff", fontSize: "18px" }}>
+            Delete your account?
+          </h2>
+          <p style={{ color: "#cfcfd2", fontSize: "14px", lineHeight: 1.5, margin: "0 0 16px" }}>
+            This permanently deletes your streamer account and all data collected on your
+            channel — redemption history, viewer streaks, point config, and stream sessions.
+            This cannot be undone.
+          </p>
+          {deleteError && (
+            <p style={{ color: "#ff8f8f", fontSize: "13px", margin: "0 0 12px" }}>{deleteError}</p>
+          )}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+            <button
+              onClick={() => setDeleteConfirmOpen(false)}
+              disabled={deleting}
+              style={{
+                padding: "10px 16px",
+                borderRadius: "10px",
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "transparent",
+                color: "#fff",
+                cursor: deleting ? "default" : "pointer",
+                fontWeight: "600",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDeleteAccount}
+              disabled={deleting}
+              style={{
+                padding: "10px 16px",
+                borderRadius: "10px",
+                border: "none",
+                background: "#d32f2f",
+                color: "#fff",
+                cursor: deleting ? "default" : "pointer",
+                fontWeight: "600",
+                opacity: deleting ? 0.7 : 1,
+              }}
+            >
+              {deleting ? "Deleting..." : "Delete Everything"}
+            </button>
+          </div>
+        </div>
       </div>
     );
   };
@@ -287,6 +427,7 @@ export default function App() {
       <ScrollToHash />
 
       <LoginModal open={loginModalOpen} onClose={() => setLoginModalOpen(false)} />
+      {renderDeleteConfirm()}
 
       <div className="app-main">
         <Routes>
@@ -297,6 +438,8 @@ export default function App() {
           <Route path="/contact" element={<Navigate to="/#contact" replace />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="/view/:login" element={<PublicView />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/terms" element={<TermsOfService />} />
 
           <Route
             path="/dashboard"
