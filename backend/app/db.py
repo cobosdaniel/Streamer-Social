@@ -227,6 +227,27 @@ def get_active_session(twitch_user_id):
     return row
 
 
+def get_redemptions_per_stream(twitch_user_id: str, limit: int = 20) -> list[dict]:
+    """Channel point redemption count for each of the streamer's most recent
+    stream sessions — the basis for the redemptions-vs-viewers analytics chart."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT ss.id AS session_id, ss.started_at, ss.ended_at,
+               COUNT(r.event_id) AS redemption_count
+        FROM stream_sessions ss
+        LEFT JOIN redemptions r ON r.session_id = ss.id
+        WHERE ss.twitch_user_id = %s
+        GROUP BY ss.id, ss.started_at, ss.ended_at
+        ORDER BY ss.started_at DESC
+        LIMIT %s
+    """, (twitch_user_id, limit))
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return list(reversed(rows))
+
+
 _STREAK_KEY = "__streak__"
 
 # ── Viewer Streaks ─────────────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ from db import (
     get_streamer_by_login, get_active_session,
     get_redeemed_rewards,
     delete_streamer_account, delete_viewer_data,
+    get_redemptions_per_stream,
 )
 import os
 import logging
@@ -177,6 +178,28 @@ async def get_leaderboard(
     cursor.close()
     conn.close()
     return rows
+
+
+# ── Analytics ──────────────────────────────────────────────────────────────────
+
+@app.get("/api/analytics/redemptions-per-stream")
+@limiter.limit("60/minute")
+async def redemptions_per_stream_endpoint(
+    request: Request,
+    limit: int = 20,
+    user_id: str = Depends(get_current_user),
+):
+    limit = max(1, min(limit, 100))
+    rows = get_redemptions_per_stream(user_id, limit=limit)
+    return [
+        {
+            "session_id":       r["session_id"],
+            "started_at":       r["started_at"].isoformat() + "Z" if r["started_at"] else None,
+            "ended_at":         r["ended_at"].isoformat() + "Z" if r["ended_at"] else None,
+            "redemption_count": int(r["redemption_count"]),
+        }
+        for r in rows
+    ]
 
 
 # ── Streaks — fast cached read ─────────────────────────────────────────────────
