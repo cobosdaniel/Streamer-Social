@@ -82,6 +82,14 @@ type StreamRedemptionPoint = {
   redemption_count: number;
 };
 
+type RewardPopularity = {
+  id:               string;
+  title:            string;
+  cost:             number | null;
+  is_enabled:       boolean | null;
+  redemption_count: number;
+};
+
 type ScheduleDay = {
   day:   string;
   start: string;
@@ -430,6 +438,94 @@ function RedemptionsPerStreamCard({
   );
 }
 
+function RewardPopularityBars({ data }: { data: RewardPopularity[] }) {
+  const maxCount = Math.max(1, ...data.map((r) => r.redemption_count));
+
+  return (
+    <Stack spacing={1.25}>
+      {data.map((r) => {
+        const pct = r.redemption_count > 0 ? Math.max((r.redemption_count / maxCount) * 100, 2) : 0;
+        return (
+          <Box key={r.id} sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+            <Box sx={{ width: 168, flexShrink: 0, overflow: "hidden" }}>
+              <Typography
+                title={r.title}
+                sx={{
+                  fontSize: "13px", fontWeight: 600, color: "#f4ecff",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}
+              >
+                {r.title}
+              </Typography>
+              <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                {r.cost != null && (
+                  <Typography sx={{ fontSize: "11px", color: "#6a5c80" }}>{r.cost} pts</Typography>
+                )}
+                {r.is_enabled === false && (
+                  <Typography sx={{
+                    fontSize: "10px", fontWeight: 700, color: "#a090c0", letterSpacing: "0.02em",
+                    background: "rgba(255,255,255,0.06)", borderRadius: "4px", px: 0.5, py: "1px",
+                  }}>
+                    DISABLED
+                  </Typography>
+                )}
+              </Stack>
+            </Box>
+            <Box
+              sx={{
+                flex: 1, position: "relative", height: 18,
+                background: "rgba(255,255,255,0.04)", borderRadius: "4px",
+              }}
+            >
+              <Box
+                sx={{
+                  position: "absolute", left: 0, top: 0, bottom: 0,
+                  width: `${pct}%`,
+                  background: "#8b7bff",
+                  borderRadius: "0 4px 4px 0",
+                }}
+              />
+            </Box>
+            <Typography
+              sx={{
+                width: 30, textAlign: "right", flexShrink: 0,
+                fontSize: "13px", fontWeight: 700, color: "#c5bcff",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {r.redemption_count}
+            </Typography>
+          </Box>
+        );
+      })}
+    </Stack>
+  );
+}
+
+function RewardPopularityCard({
+  data, loading,
+}: { data: RewardPopularity[]; loading: boolean }) {
+  return (
+    <SectionCard title="Reward Popularity">
+      <Typography sx={{ fontSize: "12px", color: "#6a5c80", mb: 1.5 }}>
+        Ranked by redemptions — most common at the top, least likely at the bottom.
+        Suggestions (e.g. lowering the price on slow rewards) are coming soon.
+      </Typography>
+      {loading ? (
+        <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+          <CircularProgress size={24} sx={{ color: "#8b7bff" }} />
+        </Box>
+      ) : data.length === 0 ? (
+        <EmptyState message="No rewards configured yet." />
+      ) : (
+        <Box sx={{ overflowY: "auto", maxHeight: `${8 * 40}px`, pr: 0.5 }}>
+          <RewardPopularityBars data={data} />
+        </Box>
+      )}
+    </SectionCard>
+  );
+}
+
 type DashboardTab = "overview" | "analytics";
 
 export default function Dashboard() {
@@ -485,6 +581,10 @@ export default function Dashboard() {
   const [streamRedemptions,        setStreamRedemptions]        = useState<StreamRedemptionPoint[]>([]);
   const [streamRedemptionsLoading, setStreamRedemptionsLoading] = useState(false);
   const [streamRedemptionsLoaded,  setStreamRedemptionsLoaded]  = useState(false);
+
+  const [rewardPopularity,        setRewardPopularity]        = useState<RewardPopularity[]>([]);
+  const [rewardPopularityLoading, setRewardPopularityLoading] = useState(false);
+  const [rewardPopularityLoaded,  setRewardPopularityLoaded]  = useState(false);
 
   // ── Initial fetch ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -602,6 +702,19 @@ export default function Dashboard() {
         setStreamRedemptionsLoaded(true);
       });
   }, [activeTab, streamRedemptionsLoaded]);
+
+  useEffect(() => {
+    if (activeTab !== "analytics" || rewardPopularityLoaded) return;
+    setRewardPopularityLoading(true);
+    apiFetch("/api/analytics/reward-popularity")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setRewardPopularity)
+      .catch(console.error)
+      .finally(() => {
+        setRewardPopularityLoading(false);
+        setRewardPopularityLoaded(true);
+      });
+  }, [activeTab, rewardPopularityLoaded]);
 
   // ── WebSocket ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -870,6 +983,7 @@ export default function Dashboard() {
       {activeTab === "analytics" ? (
         <Stack spacing={2}>
           <RedemptionsPerStreamCard data={streamRedemptions} loading={streamRedemptionsLoading} />
+          <RewardPopularityCard data={rewardPopularity} loading={rewardPopularityLoading} />
         </Stack>
       ) : (
       <Stack spacing={2}>

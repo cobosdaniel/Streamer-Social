@@ -19,6 +19,7 @@ from db import (
     get_redeemed_rewards,
     delete_streamer_account, delete_viewer_data,
     get_redemptions_per_stream,
+    get_redemption_counts_by_reward,
 )
 import os
 import logging
@@ -202,6 +203,31 @@ async def redemptions_per_stream_endpoint(
     ]
 
 
+@app.get("/api/analytics/reward-popularity")
+@limiter.limit("60/minute")
+async def reward_popularity_endpoint(
+    request: Request,
+    from_date: str | None = None,
+    to_date:   str | None = None,
+    user_id: str = Depends(get_current_user),
+):
+    rewards = await fetch_custom_rewards(user_id)
+    counts = get_redemption_counts_by_reward(user_id, from_date=from_date, to_date=to_date)
+
+    rows = [
+        {
+            "id":               r["id"],
+            "title":            r["title"],
+            "cost":             r.get("cost"),
+            "is_enabled":       r.get("is_enabled"),
+            "redemption_count": counts.get(r["id"], 0),
+        }
+        for r in rewards
+    ]
+    rows.sort(key=lambda r: r["redemption_count"], reverse=True)
+    return rows
+
+
 # ── Streaks — fast cached read ─────────────────────────────────────────────────
 
 @app.get("/api/streaks")
@@ -341,9 +367,9 @@ async def public_status(request: Request, login: str):
 
 # ── Rewards ─────────────────────────────────────────────────
 
-@app.get("/api/rewards")
-@limiter.limit("60/minute")
-async def get_rewards(request: Request, user_id: str = Depends(get_current_user)):
+async def fetch_custom_rewards(user_id: str) -> list[dict]:
+    """Live custom-reward config from Twitch (id, title, cost, is_enabled),
+    sorted by title. Shared by /api/rewards and the analytics endpoints."""
     user_data = get_user_tokens(user_id)
 
     if not user_data:
@@ -390,6 +416,12 @@ async def get_rewards(request: Request, user_id: str = Depends(get_current_user)
         }
         for r in data
     ]
+
+
+@app.get("/api/rewards")
+@limiter.limit("60/minute")
+async def get_rewards(request: Request, user_id: str = Depends(get_current_user)):
+    return await fetch_custom_rewards(user_id)
 
 
 # ── Streak Schedule ────────────────────────────────────────────────────────────

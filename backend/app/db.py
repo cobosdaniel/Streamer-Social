@@ -248,6 +248,33 @@ def get_redemptions_per_stream(twitch_user_id: str, limit: int = 20) -> list[dic
     return list(reversed(rows))
 
 
+def get_redemption_counts_by_reward(
+    twitch_user_id: str, from_date: str | None = None, to_date: str | None = None,
+) -> dict[str, int]:
+    """Redemption count per reward id — the basis for the reward-popularity
+    analytics card (most vs. least redeemed rewards)."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    query = "SELECT reward_id, COUNT(*) AS cnt FROM redemptions WHERE twitch_user_id = %s"
+    params: list = [twitch_user_id]
+
+    if from_date:
+        query += " AND redeemed_at >= %s"
+        params.append(from_date)
+    if to_date:
+        query += " AND redeemed_at < DATE_ADD(%s, INTERVAL 1 DAY)"
+        params.append(to_date)
+
+    query += " GROUP BY reward_id"
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return {r["reward_id"]: r["cnt"] for r in rows}
+
+
 _STREAK_KEY = "__streak__"
 
 # ── Viewer Streaks ─────────────────────────────────────────────────────────────
