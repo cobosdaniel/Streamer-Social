@@ -18,6 +18,8 @@ import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
 import Alert from "@mui/material/Alert";
+import Tabs from "@mui/material/Tabs";
+import Tab from "@mui/material/Tab";
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -71,6 +73,21 @@ type StreakEntry = {
   streak:         number;
   longest_streak: number;
   updated_at:     string | null;
+};
+
+type StreamRedemptionPoint = {
+  session_id:       number;
+  started_at:       string;
+  ended_at:         string | null;
+  redemption_count: number;
+};
+
+type RewardPopularity = {
+  id:               string;
+  title:            string;
+  cost:             number | null;
+  is_enabled:       boolean | null;
+  redemption_count: number;
 };
 
 type ScheduleDay = {
@@ -225,8 +242,296 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
+function formatStreamDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Path for a bar with rounded top corners, square at the baseline.
+function topRoundedBarPath(x: number, y: number, w: number, h: number, r: number) {
+  if (h <= 0) return "";
+  const radius = Math.max(0, Math.min(r, w / 2, h));
+  return `M ${x} ${y + h}
+          L ${x} ${y + radius}
+          Q ${x} ${y} ${x + radius} ${y}
+          L ${x + w - radius} ${y}
+          Q ${x + w} ${y} ${x + w} ${y + radius}
+          L ${x + w} ${y + h}
+          Z`;
+}
+
+function RedemptionsPerStreamChart({ data }: { data: StreamRedemptionPoint[] }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const width  = 720;
+  const height = 220;
+  const padding = { top: 16, right: 12, bottom: 28, left: 34 };
+  const chartW = width  - padding.left - padding.right;
+  const chartH = height - padding.top  - padding.bottom;
+
+  const maxCount = Math.max(1, ...data.map((d) => d.redemption_count));
+  const niceMax  = Math.max(5, Math.ceil(maxCount / 5) * 5);
+  const yTicks   = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(niceMax * f));
+
+  const barSlot  = chartW / data.length;
+  const barWidth = Math.min(24, barSlot * 0.6);
+
+  const xFor = (i: number) => padding.left + barSlot * i + (barSlot - barWidth) / 2;
+  const yFor = (count: number) => padding.top + chartH - (count / niceMax) * chartH;
+
+  const hovered = hoverIdx !== null ? data[hoverIdx] : null;
+  const tooltipLeftPct = hoverIdx !== null
+    ? ((padding.left + barSlot * (hoverIdx + 0.5)) / width) * 100
+    : 0;
+
+  return (
+    <Box sx={{ position: "relative" }}>
+      <Box
+        component="svg"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label="Channel point redemptions per stream"
+        sx={{ width: "100%", height: "auto", display: "block", overflow: "visible" }}
+      >
+        {yTicks.map((tick, i) => {
+          const y = yFor(tick);
+          return (
+            <g key={i}>
+              <line
+                x1={padding.left} x2={width - padding.right} y1={y} y2={y}
+                stroke="rgba(255,255,255,0.08)" strokeWidth={1}
+              />
+              <text x={padding.left - 8} y={y + 3} textAnchor="end" fontSize={10} fill="#6a5c80">
+                {tick}
+              </text>
+            </g>
+          );
+        })}
+
+        {data.map((d, i) => {
+          const barH   = (d.redemption_count / niceMax) * chartH;
+          const x      = xFor(i);
+          const y      = padding.top + chartH - barH;
+          const active = hoverIdx === i;
+          return (
+            <g key={d.session_id}>
+              <path d={topRoundedBarPath(x, y, barWidth, barH, 4)} fill={active ? "#a396ff" : "#8b7bff"} />
+              <text
+                x={x + barWidth / 2}
+                y={height - padding.bottom + 16}
+                textAnchor="middle"
+                fontSize={10}
+                fill="#6a5c80"
+              >
+                {formatStreamDate(d.started_at)}
+              </text>
+              {/* Hit target spans the full bar slot, not just the painted bar. */}
+              <rect
+                x={padding.left + barSlot * i}
+                y={padding.top}
+                width={barSlot}
+                height={chartH}
+                fill="transparent"
+                tabIndex={0}
+                role="button"
+                aria-label={`${formatStreamDate(d.started_at)}: ${d.redemption_count} redemption${d.redemption_count === 1 ? "" : "s"}`}
+                onPointerEnter={() => setHoverIdx(i)}
+                onPointerLeave={() => setHoverIdx((cur) => (cur === i ? null : cur))}
+                onFocus={() => setHoverIdx(i)}
+                onBlur={() => setHoverIdx((cur) => (cur === i ? null : cur))}
+              />
+            </g>
+          );
+        })}
+      </Box>
+
+      {hovered && (
+        <Box
+          sx={{
+            position: "absolute",
+            top: 4,
+            left: `${tooltipLeftPct}%`,
+            transform: "translateX(-50%)",
+            background: "#1a1330",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: "8px",
+            px: 1.25,
+            py: 0.75,
+            pointerEvents: "none",
+            whiteSpace: "nowrap",
+            zIndex: 1,
+          }}
+        >
+          <Typography sx={{ fontSize: "13px", fontWeight: 700, color: "#f4ecff" }}>
+            {hovered.redemption_count} redemption{hovered.redemption_count === 1 ? "" : "s"}
+          </Typography>
+          <Typography sx={{ fontSize: "11px", color: "#a090c0" }}>
+            {formatStreamDate(hovered.started_at)}
+          </Typography>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function RedemptionsPerStreamList({ data }: { data: StreamRedemptionPoint[] }) {
+  return (
+    <List disablePadding>
+      {[...data].reverse().map((d) => (
+        <ListItem key={d.session_id} disableGutters sx={{ px: 1, py: 0.75, borderRadius: "8px" }}>
+          <ListItemText
+            primary={new Date(d.started_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+            slotProps={{ primary: { sx: { fontSize: "13px", color: "#cbbce4" } } }}
+          />
+          <Typography sx={{ fontSize: "14px", fontWeight: 700, color: "#8b7bff" }}>
+            {d.redemption_count}
+          </Typography>
+        </ListItem>
+      ))}
+    </List>
+  );
+}
+
+function RedemptionsPerStreamCard({
+  data, loading,
+}: { data: StreamRedemptionPoint[]; loading: boolean }) {
+  const [view, setView] = useState<"chart" | "list">("chart");
+
+  const toggleBtnSx = (on: boolean) => ({
+    fontSize: "11px", fontWeight: 600, minWidth: 0, px: 1, py: 0.25,
+    textTransform: "none" as const,
+    color: on ? "#c5bcff" : "#6a5c80",
+    background: on ? "rgba(139,123,255,0.15)" : "transparent",
+    "&:hover": { background: on ? "rgba(139,123,255,0.22)" : "rgba(255,255,255,0.05)" },
+  });
+
+  return (
+    <SectionCard
+      title="Redemptions per Stream"
+      action={
+        data.length > 0 && (
+          <Stack direction="row" spacing={0.5}>
+            <Button size="small" onClick={() => setView("chart")} sx={toggleBtnSx(view === "chart")}>
+              Chart
+            </Button>
+            <Button size="small" onClick={() => setView("list")} sx={toggleBtnSx(view === "list")}>
+              List
+            </Button>
+          </Stack>
+        )
+      }
+    >
+      <Typography sx={{ fontSize: "12px", color: "#6a5c80", mb: 1.5 }}>
+        Redemptions used each stream. Viewer-count correlation is coming soon.
+      </Typography>
+      {loading ? (
+        <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+          <CircularProgress size={24} sx={{ color: "#8b7bff" }} />
+        </Box>
+      ) : data.length === 0 ? (
+        <EmptyState message="No stream data yet." />
+      ) : view === "chart" ? (
+        <RedemptionsPerStreamChart data={data} />
+      ) : (
+        <RedemptionsPerStreamList data={data} />
+      )}
+    </SectionCard>
+  );
+}
+
+function RewardPopularityBars({ data }: { data: RewardPopularity[] }) {
+  const maxCount = Math.max(1, ...data.map((r) => r.redemption_count));
+
+  return (
+    <Stack spacing={1.25}>
+      {data.map((r) => {
+        const pct = r.redemption_count > 0 ? Math.max((r.redemption_count / maxCount) * 100, 2) : 0;
+        return (
+          <Box key={r.id} sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+            <Box sx={{ width: 168, flexShrink: 0, overflow: "hidden" }}>
+              <Typography
+                title={r.title}
+                sx={{
+                  fontSize: "13px", fontWeight: 600, color: "#f4ecff",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}
+              >
+                {r.title}
+              </Typography>
+              <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                {r.cost != null && (
+                  <Typography sx={{ fontSize: "11px", color: "#6a5c80" }}>{r.cost} pts</Typography>
+                )}
+                {r.is_enabled === false && (
+                  <Typography sx={{
+                    fontSize: "10px", fontWeight: 700, color: "#a090c0", letterSpacing: "0.02em",
+                    background: "rgba(255,255,255,0.06)", borderRadius: "4px", px: 0.5, py: "1px",
+                  }}>
+                    DISABLED
+                  </Typography>
+                )}
+              </Stack>
+            </Box>
+            <Box
+              sx={{
+                flex: 1, position: "relative", height: 18,
+                background: "rgba(255,255,255,0.04)", borderRadius: "4px",
+              }}
+            >
+              <Box
+                sx={{
+                  position: "absolute", left: 0, top: 0, bottom: 0,
+                  width: `${pct}%`,
+                  background: "#8b7bff",
+                  borderRadius: "0 4px 4px 0",
+                }}
+              />
+            </Box>
+            <Typography
+              sx={{
+                width: 30, textAlign: "right", flexShrink: 0,
+                fontSize: "13px", fontWeight: 700, color: "#c5bcff",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {r.redemption_count}
+            </Typography>
+          </Box>
+        );
+      })}
+    </Stack>
+  );
+}
+
+function RewardPopularityCard({
+  data, loading,
+}: { data: RewardPopularity[]; loading: boolean }) {
+  return (
+    <SectionCard title="Reward Popularity">
+      <Typography sx={{ fontSize: "12px", color: "#6a5c80", mb: 1.5 }}>
+        Ranked by redemptions — most common at the top, least likely at the bottom.
+        Suggestions (e.g. lowering the price on slow rewards) are coming soon.
+      </Typography>
+      {loading ? (
+        <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+          <CircularProgress size={24} sx={{ color: "#8b7bff" }} />
+        </Box>
+      ) : data.length === 0 ? (
+        <EmptyState message="No rewards configured yet." />
+      ) : (
+        <Box sx={{ overflowY: "auto", maxHeight: `${8 * 40}px`, pr: 0.5 }}>
+          <RewardPopularityBars data={data} />
+        </Box>
+      )}
+    </SectionCard>
+  );
+}
+
+type DashboardTab = "overview" | "analytics";
+
 export default function Dashboard() {
   const wsRef = useRef<WebSocket | null>(null);
+
+  const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
 
   const [dashboardData, setDashboardData] = useState({
     login: "", broadcaster_id: "", client_id: "", scopes: [] as string[],
@@ -272,6 +577,14 @@ export default function Dashboard() {
   const [scheduleLoading, setScheduleLoading]  = useState(false);
   const [scheduleSaved,   setScheduleSaved]    = useState(false);
   const [scheduleSupported, setScheduleSupported] = useState(true);
+
+  const [streamRedemptions,        setStreamRedemptions]        = useState<StreamRedemptionPoint[]>([]);
+  const [streamRedemptionsLoading, setStreamRedemptionsLoading] = useState(false);
+  const [streamRedemptionsLoaded,  setStreamRedemptionsLoaded]  = useState(false);
+
+  const [rewardPopularity,        setRewardPopularity]        = useState<RewardPopularity[]>([]);
+  const [rewardPopularityLoading, setRewardPopularityLoading] = useState(false);
+  const [rewardPopularityLoaded,  setRewardPopularityLoaded]  = useState(false);
 
   // ── Initial fetch ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -375,6 +688,33 @@ export default function Dashboard() {
       .then((r) => r.ok ? r.json() : []).then(setPointsEntries).catch(console.error).finally(() => setPointsLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, pointsFrom, pointsTo, JSON.stringify(pointConfig)]);
+
+  // ── Analytics fetch (lazy — only once the tab is opened) ───────────────────────
+  useEffect(() => {
+    if (activeTab !== "analytics" || streamRedemptionsLoaded) return;
+    setStreamRedemptionsLoading(true);
+    apiFetch("/api/analytics/redemptions-per-stream")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setStreamRedemptions)
+      .catch(console.error)
+      .finally(() => {
+        setStreamRedemptionsLoading(false);
+        setStreamRedemptionsLoaded(true);
+      });
+  }, [activeTab, streamRedemptionsLoaded]);
+
+  useEffect(() => {
+    if (activeTab !== "analytics" || rewardPopularityLoaded) return;
+    setRewardPopularityLoading(true);
+    apiFetch("/api/analytics/reward-popularity")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setRewardPopularity)
+      .catch(console.error)
+      .finally(() => {
+        setRewardPopularityLoading(false);
+        setRewardPopularityLoaded(true);
+      });
+  }, [activeTab, rewardPopularityLoaded]);
 
   // ── WebSocket ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -611,6 +951,41 @@ export default function Dashboard() {
         )}
       </Stack>
 
+      {/* Tab switcher */}
+      <Tabs
+        value={activeTab}
+        onChange={(_, v: DashboardTab) => setActiveTab(v)}
+        sx={{
+          mb: 3,
+          minHeight: 36,
+          borderBottom: "1px solid rgba(255,255,255,0.07)",
+          "& .MuiTabs-indicator": { background: "#8b7bff" },
+        }}
+      >
+        <Tab
+          label="Overview"
+          value="overview"
+          sx={{
+            minHeight: 36, fontSize: "13px", fontWeight: 600, textTransform: "none",
+            color: "#a090c0", "&.Mui-selected": { color: "#f4ecff" },
+          }}
+        />
+        <Tab
+          label="Analytics"
+          value="analytics"
+          sx={{
+            minHeight: 36, fontSize: "13px", fontWeight: 600, textTransform: "none",
+            color: "#a090c0", "&.Mui-selected": { color: "#f4ecff" },
+          }}
+        />
+      </Tabs>
+
+      {activeTab === "analytics" ? (
+        <Stack spacing={2}>
+          <RedemptionsPerStreamCard data={streamRedemptions} loading={streamRedemptionsLoading} />
+          <RewardPopularityCard data={rewardPopularity} loading={rewardPopularityLoading} />
+        </Stack>
+      ) : (
       <Stack spacing={2}>
         {/* Leaderboard (points) — full width */}
         <SectionCard
@@ -967,6 +1342,7 @@ export default function Dashboard() {
           </Box>
         </SectionCard>
       </Stack>
+      )}
 
       {/* Point config dialog */}
       <Dialog
