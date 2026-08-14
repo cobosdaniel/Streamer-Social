@@ -419,43 +419,6 @@ function RedemptionsPerStreamList({ data }: { data: StreamRedemptionPoint[] }) {
   );
 }
 
-function StreamStatTiles({ data }: { data: StreamRedemptionPoint[] }) {
-  const total = data.reduce((sum, d) => sum + d.redemption_count, 0);
-  const avg   = data.length ? total / data.length : 0;
-  const max   = data.length ? Math.max(...data.map((d) => d.redemption_count)) : 0;
-
-  const tiles = [
-    { label: "Total Redemptions", value: total.toLocaleString(),          active: true },
-    { label: "Avg / Stream",      value: avg.toFixed(1),                  active: false },
-    { label: "Busiest Stream",    value: max.toLocaleString(),            active: false },
-  ];
-
-  return (
-    <Stack direction="row" sx={{ mb: 2 }}>
-      {tiles.map((t, i) => (
-        <Box
-          key={t.label}
-          sx={{
-            flex: 1, textAlign: "center", py: 1,
-            borderRight: i < tiles.length - 1 ? "1px solid rgba(255,255,255,0.07)" : "none",
-            borderBottom: t.active ? "2px solid #8b7bff" : "2px solid transparent",
-          }}
-        >
-          <Typography sx={{
-            fontSize: "22px", fontWeight: 700, fontVariantNumeric: "tabular-nums",
-            color: t.active ? "#c5bcff" : "#f4ecff",
-          }}>
-            {t.value}
-          </Typography>
-          <Typography sx={{ fontSize: "12px", color: "#a090c0" }}>
-            {t.label}
-          </Typography>
-        </Box>
-      ))}
-    </Stack>
-  );
-}
-
 function StreamDateRangeHeader({
   data, offset, total, loading, onOlder, onNewer,
 }: {
@@ -543,7 +506,6 @@ function RedemptionsPerStreamCard({
         <>
           <Box sx={{ opacity: loading ? 0.5 : 1, transition: "opacity 0.15s", pointerEvents: loading ? "none" : "auto" }}>
             <StreamDateRangeHeader data={data} offset={offset} total={total} loading={loading} onOlder={onOlder} onNewer={onNewer} />
-            <StreamStatTiles data={data} />
             {view === "chart" ? <RedemptionsPerStreamChart data={data} /> : <RedemptionsPerStreamList data={data} />}
           </Box>
           <Box sx={{ textAlign: "center", mt: 2, pt: 1.5, borderTop: "1px solid rgba(255,255,255,0.07)" }}>
