@@ -18,7 +18,7 @@ from db import (
     get_streamer_by_login, get_active_session,
     get_redeemed_rewards,
     delete_streamer_account, delete_viewer_data,
-    get_redemptions_per_stream,
+    get_redemptions_per_stream, count_stream_sessions,
     get_redemption_counts_by_reward,
 )
 import os
@@ -188,19 +188,26 @@ async def get_leaderboard(
 async def redemptions_per_stream_endpoint(
     request: Request,
     limit: int = 20,
+    offset: int = 0,
     user_id: str = Depends(get_current_user),
 ):
     limit = max(1, min(limit, 100))
-    rows = get_redemptions_per_stream(user_id, limit=limit)
-    return [
-        {
-            "session_id":       r["session_id"],
-            "started_at":       r["started_at"].isoformat() + "Z" if r["started_at"] else None,
-            "ended_at":         r["ended_at"].isoformat() + "Z" if r["ended_at"] else None,
-            "redemption_count": int(r["redemption_count"]),
-        }
-        for r in rows
-    ]
+    offset = max(0, offset)
+    rows = get_redemptions_per_stream(user_id, limit=limit, offset=offset)
+    return {
+        "streams": [
+            {
+                "session_id":       r["session_id"],
+                "started_at":       r["started_at"].isoformat() + "Z" if r["started_at"] else None,
+                "ended_at":         r["ended_at"].isoformat() + "Z" if r["ended_at"] else None,
+                "redemption_count": int(r["redemption_count"]),
+            }
+            for r in rows
+        ],
+        "total":  count_stream_sessions(user_id),
+        "offset": offset,
+        "limit":  limit,
+    }
 
 
 @app.get("/api/analytics/reward-popularity")
