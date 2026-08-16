@@ -227,9 +227,10 @@ def get_active_session(twitch_user_id):
     return row
 
 
-def get_redemptions_per_stream(twitch_user_id: str, limit: int = 20) -> list[dict]:
-    """Channel point redemption count for each of the streamer's most recent
-    stream sessions — the basis for the redemptions-vs-viewers analytics chart."""
+def get_redemptions_per_stream(twitch_user_id: str, limit: int = 20, offset: int = 0) -> list[dict]:
+    """Channel point redemption count for a page of the streamer's stream
+    sessions, most recent first before reversing — the basis for the
+    redemptions-vs-viewers analytics chart. `offset` pages further back in time."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
@@ -240,12 +241,24 @@ def get_redemptions_per_stream(twitch_user_id: str, limit: int = 20) -> list[dic
         WHERE ss.twitch_user_id = %s
         GROUP BY ss.id, ss.started_at, ss.ended_at
         ORDER BY ss.started_at DESC
-        LIMIT %s
-    """, (twitch_user_id, limit))
+        LIMIT %s OFFSET %s
+    """, (twitch_user_id, limit, offset))
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
     return list(reversed(rows))
+
+
+def count_stream_sessions(twitch_user_id: str) -> int:
+    """Total stream sessions the streamer has — lets the analytics pager know
+    whether an older page exists."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM stream_sessions WHERE twitch_user_id = %s", (twitch_user_id,))
+    count = cursor.fetchone()[0]
+    cursor.close()
+    conn.close()
+    return count
 
 
 def get_redemption_counts_by_reward(

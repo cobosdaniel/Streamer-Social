@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Link, Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
 
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
@@ -37,6 +37,12 @@ function ScrollToHash() {
   }, [pathname, hash]);
 
   return null;
+}
+
+// Old public-view links used /view/:login — keep them working at the new /:login URL.
+function LegacyPublicViewRedirect() {
+  const { login } = useParams<{ login: string }>();
+  return <Navigate to={`/${login ?? ""}`} replace />;
 }
 
 export default function App() {
@@ -437,7 +443,7 @@ export default function App() {
           <Route path="/about" element={<Navigate to="/#about" replace />} />
           <Route path="/contact" element={<Navigate to="/#contact" replace />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
-          <Route path="/view/:login" element={<PublicView />} />
+          <Route path="/view/:login" element={<LegacyPublicViewRedirect />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<TermsOfService />} />
 
@@ -449,6 +455,10 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* Twitch-style public profile URL — must stay last so it only
+              catches paths none of the routes above matched. */}
+          <Route path="/:login" element={<PublicView />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

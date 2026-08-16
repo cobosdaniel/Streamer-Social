@@ -25,6 +25,7 @@ const API_BASE = import.meta.env.VITE_API_URL;
 
 const MAX_STORED = 50;
 const VISIBLE_COUNT = 10;
+const STREAM_PAGE_SIZE = 20;
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -246,6 +247,24 @@ function formatStreamDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function formatFullStreamDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function exportStreamsCsv(data: StreamRedemptionPoint[]) {
+  const header = "Stream Date,Redemptions\n";
+  const body = data.map((d) => `${formatFullStreamDate(d.started_at)},${d.redemption_count}`).join("\n");
+  const blob = new Blob([header + body], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "redemptions-per-stream.csv";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 // Path for a bar with rounded top corners, square at the baseline.
 function topRoundedBarPath(x: number, y: number, w: number, h: number, r: number) {
   if (h <= 0) return "";
@@ -274,6 +293,8 @@ function RedemptionsPerStreamChart({ data }: { data: StreamRedemptionPoint[] }) 
 
   const barSlot  = chartW / data.length;
   const barWidth = Math.min(24, barSlot * 0.6);
+  // Thin out x-axis labels once there are too many bars to label every one legibly.
+  const labelEvery = Math.max(1, Math.ceil(data.length / 7));
 
   const xFor = (i: number) => padding.left + barSlot * i + (barSlot - barWidth) / 2;
   const yFor = (count: number) => padding.top + chartH - (count / niceMax) * chartH;
@@ -298,7 +319,7 @@ function RedemptionsPerStreamChart({ data }: { data: StreamRedemptionPoint[] }) 
             <g key={i}>
               <line
                 x1={padding.left} x2={width - padding.right} y1={y} y2={y}
-                stroke="rgba(255,255,255,0.08)" strokeWidth={1}
+                stroke="rgba(255,255,255,0.1)" strokeWidth={1} strokeDasharray="4 4"
               />
               <text x={padding.left - 8} y={y + 3} textAnchor="end" fontSize={10} fill="#6a5c80">
                 {tick}
@@ -315,15 +336,17 @@ function RedemptionsPerStreamChart({ data }: { data: StreamRedemptionPoint[] }) 
           return (
             <g key={d.session_id}>
               <path d={topRoundedBarPath(x, y, barWidth, barH, 4)} fill={active ? "#a396ff" : "#8b7bff"} />
-              <text
-                x={x + barWidth / 2}
-                y={height - padding.bottom + 16}
-                textAnchor="middle"
-                fontSize={10}
-                fill="#6a5c80"
-              >
-                {formatStreamDate(d.started_at)}
-              </text>
+              {i % labelEvery === 0 && (
+                <text
+                  x={x + barWidth / 2}
+                  y={height - padding.bottom + 16}
+                  textAnchor="middle"
+                  fontSize={10}
+                  fill="#6a5c80"
+                >
+                  {formatStreamDate(d.started_at)}
+                </text>
+              )}
               {/* Hit target spans the full bar slot, not just the painted bar. */}
               <rect
                 x={padding.left + barSlot * i}
@@ -369,6 +392,11 @@ function RedemptionsPerStreamChart({ data }: { data: StreamRedemptionPoint[] }) 
           </Typography>
         </Box>
       )}
+
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "center", mt: 1 }}>
+        <Box sx={{ width: 10, height: 10, borderRadius: "2px", background: "#8b7bff", flexShrink: 0 }} />
+        <Typography sx={{ fontSize: "12px", color: "#a090c0" }}>Redemptions</Typography>
+      </Stack>
     </Box>
   );
 }
@@ -391,9 +419,54 @@ function RedemptionsPerStreamList({ data }: { data: StreamRedemptionPoint[] }) {
   );
 }
 
+function StreamDateRangeHeader({
+  data, offset, total, loading, onOlder, onNewer,
+}: {
+  data: StreamRedemptionPoint[]; offset: number; total: number; loading: boolean;
+  onOlder: () => void; onNewer: () => void;
+}) {
+  const hasOlder = offset + STREAM_PAGE_SIZE < total;
+  const hasNewer = offset > 0;
+  const rangeLabel = data.length > 0
+    ? `${formatFullStreamDate(data[0].started_at)} – ${formatFullStreamDate(data[data.length - 1].started_at)}`
+    : "No streams yet";
+
+  const navBtnSx = {
+    minWidth: 0, width: 28, height: 28, borderRadius: "8px",
+    color: "#c5bcff", fontSize: "16px",
+    "&:hover": { background: "rgba(139,123,255,0.12)" },
+    "&.Mui-disabled": { color: "#3d3554" },
+  };
+
+  return (
+    <Box sx={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      mb: 2, pb: 1.5, borderBottom: "1px solid rgba(255,255,255,0.07)",
+    }}>
+      <Button disabled={!hasOlder || loading} onClick={onOlder} sx={navBtnSx} aria-label="Older streams">
+        ‹
+      </Button>
+      <Box sx={{ textAlign: "center" }}>
+        <Typography sx={{ fontSize: "13px", fontWeight: 700, color: "#c5bcff" }}>
+          {rangeLabel}
+        </Typography>
+        <Typography sx={{ fontSize: "11px", color: "#6a5c80" }}>
+          {data.length} stream{data.length === 1 ? "" : "s"}
+        </Typography>
+      </Box>
+      <Button disabled={!hasNewer || loading} onClick={onNewer} sx={navBtnSx} aria-label="More recent streams">
+        ›
+      </Button>
+    </Box>
+  );
+}
+
 function RedemptionsPerStreamCard({
-  data, loading,
-}: { data: StreamRedemptionPoint[]; loading: boolean }) {
+  data, loading, offset, total, onOlder, onNewer,
+}: {
+  data: StreamRedemptionPoint[]; loading: boolean; offset: number; total: number;
+  onOlder: () => void; onNewer: () => void;
+}) {
   const [view, setView] = useState<"chart" | "list">("chart");
 
   const toggleBtnSx = (on: boolean) => ({
@@ -423,16 +496,28 @@ function RedemptionsPerStreamCard({
       <Typography sx={{ fontSize: "12px", color: "#6a5c80", mb: 1.5 }}>
         Redemptions used each stream. Viewer-count correlation is coming soon.
       </Typography>
-      {loading ? (
+      {data.length === 0 && loading ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
           <CircularProgress size={24} sx={{ color: "#8b7bff" }} />
         </Box>
       ) : data.length === 0 ? (
         <EmptyState message="No stream data yet." />
-      ) : view === "chart" ? (
-        <RedemptionsPerStreamChart data={data} />
       ) : (
-        <RedemptionsPerStreamList data={data} />
+        <>
+          <Box sx={{ opacity: loading ? 0.5 : 1, transition: "opacity 0.15s", pointerEvents: loading ? "none" : "auto" }}>
+            <StreamDateRangeHeader data={data} offset={offset} total={total} loading={loading} onOlder={onOlder} onNewer={onNewer} />
+            {view === "chart" ? <RedemptionsPerStreamChart data={data} /> : <RedemptionsPerStreamList data={data} />}
+          </Box>
+          <Box sx={{ textAlign: "center", mt: 2, pt: 1.5, borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+            <Button
+              size="small"
+              onClick={() => exportStreamsCsv(data)}
+              sx={{ fontSize: "12px", fontWeight: 600, color: "#8b7bff", textTransform: "none" }}
+            >
+              Export Data
+            </Button>
+          </Box>
+        </>
       )}
     </SectionCard>
   );
@@ -580,7 +665,8 @@ export default function Dashboard() {
 
   const [streamRedemptions,        setStreamRedemptions]        = useState<StreamRedemptionPoint[]>([]);
   const [streamRedemptionsLoading, setStreamRedemptionsLoading] = useState(false);
-  const [streamRedemptionsLoaded,  setStreamRedemptionsLoaded]  = useState(false);
+  const [streamOffset,             setStreamOffset]             = useState(0);
+  const [streamTotal,              setStreamTotal]              = useState(0);
 
   const [rewardPopularity,        setRewardPopularity]        = useState<RewardPopularity[]>([]);
   const [rewardPopularityLoading, setRewardPopularityLoading] = useState(false);
@@ -689,19 +775,20 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, pointsFrom, pointsTo, JSON.stringify(pointConfig)]);
 
-  // ── Analytics fetch (lazy — only once the tab is opened) ───────────────────────
+  // ── Analytics fetch (lazy — only once the tab is opened, refetches on paging) ──
   useEffect(() => {
-    if (activeTab !== "analytics" || streamRedemptionsLoaded) return;
+    if (activeTab !== "analytics") return;
     setStreamRedemptionsLoading(true);
-    apiFetch("/api/analytics/redemptions-per-stream")
-      .then((r) => (r.ok ? r.json() : []))
-      .then(setStreamRedemptions)
+    const params = new URLSearchParams({ limit: String(STREAM_PAGE_SIZE), offset: String(streamOffset) });
+    apiFetch(`/api/analytics/redemptions-per-stream?${params}`)
+      .then((r) => (r.ok ? r.json() : { streams: [], total: 0 }))
+      .then((res) => {
+        setStreamRedemptions(res.streams ?? []);
+        setStreamTotal(res.total ?? 0);
+      })
       .catch(console.error)
-      .finally(() => {
-        setStreamRedemptionsLoading(false);
-        setStreamRedemptionsLoaded(true);
-      });
-  }, [activeTab, streamRedemptionsLoaded]);
+      .finally(() => setStreamRedemptionsLoading(false));
+  }, [activeTab, streamOffset]);
 
   useEffect(() => {
     if (activeTab !== "analytics" || rewardPopularityLoaded) return;
@@ -982,7 +1069,14 @@ export default function Dashboard() {
 
       {activeTab === "analytics" ? (
         <Stack spacing={2}>
-          <RedemptionsPerStreamCard data={streamRedemptions} loading={streamRedemptionsLoading} />
+          <RedemptionsPerStreamCard
+            data={streamRedemptions}
+            loading={streamRedemptionsLoading}
+            offset={streamOffset}
+            total={streamTotal}
+            onOlder={() => setStreamOffset((o) => o + STREAM_PAGE_SIZE)}
+            onNewer={() => setStreamOffset((o) => Math.max(0, o - STREAM_PAGE_SIZE))}
+          />
           <RewardPopularityCard data={rewardPopularity} loading={rewardPopularityLoading} />
         </Stack>
       ) : (
