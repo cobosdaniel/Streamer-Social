@@ -89,6 +89,26 @@ cp .env.development.local.example .env.development.local
 
 Vite gives `.env.development.local` priority over `.env.development`, and it's gitignored — so switching back to Railway is just deleting that one file. Nothing else changes.
 
+### No Docker? Install MySQL natively instead
+
+Docker Desktop needs virtualization (VT-x/AMD-V) enabled, which some machines — especially locked-down work laptops — won't have and can't turn on without an IT admin. If `docker compose up -d` fails with a virtualization error, skip Docker entirely:
+
+1. Install [MySQL Community Server](https://dev.mysql.com/downloads/installer/) for Windows (the installer also offers MySQL Workbench, useful as a GUI for the next steps — grab it too).
+2. Create the database and user (via Workbench, or the `mysql` CLI it installs):
+   ```sql
+   CREATE DATABASE streamer_social;
+   CREATE USER 'streamer_social'@'localhost' IDENTIFIED BY 'localdev';
+   GRANT ALL PRIVILEGES ON streamer_social.* TO 'streamer_social'@'localhost';
+   FLUSH PRIVILEGES;
+   ```
+3. Load the schema:
+   ```
+   mysql -u streamer_social -p streamer_social < backend\schema.sql
+   ```
+4. In `db.env`, use `DB_PORT=3306` (MySQL's default port) instead of the `3307` used in `db.env.example` — 3307 only exists to dodge a collision with a native MySQL install like this one, which doesn't apply once Docker's out of the picture.
+
+Everything else (backend, frontend, the `.env.development.local` switch) works exactly the same regardless of which of these two you used to get MySQL running.
+
 ### Notes
 
 - The EventSub tracker runs as a background thread inside the backend process itself — no separate service to start.
