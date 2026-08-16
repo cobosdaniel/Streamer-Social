@@ -31,9 +31,7 @@ A Twitch channel points redemption tracker and analytics dashboard for streamers
 
 ```
 Channel_Points/
-├── docker-compose.yml         # Local MySQL for development
 ├── backend/
-│   ├── schema.sql              # Local-dev schema (see Local Development below)
 │   └── app/
 │       ├── main.py               # FastAPI app, auth endpoints, WebSocket
 │       ├── db.py                 # Database queries
@@ -46,74 +44,6 @@ Channel_Points/
             └── pages/
                 └── Dashboard.tsx
 ```
-
-## Local Development
-
-Run the whole stack locally against a local database, instead of pushing to `main`/`dev` just to test something on Railway.
-
-### 1. Start the local database
-
-```
-docker compose up -d
-```
-
-This starts a MySQL container on `localhost:3307` (not the default 3306, so it won't collide with a MySQL you already have running) and initializes it from `backend/schema.sql` on first boot.
-
-> `schema.sql` is reverse-engineered from the queries in `db.py` — there's no migration file, since the production tables on Railway were created by hand. It's enough to run the app locally; it's not guaranteed to be byte-for-byte identical to production.
-
-### 2. Backend
-
-```
-cd backend/app
-pip install -r requirements.txt
-cp db.env.example db.env                  # fill in TOKEN_ENCRYPTION_KEY (see comments in the file)
-cp user_oauth.env.example user_oauth.env  # fill in your Twitch Client ID/Secret
-uvicorn main:app --reload --port 8000
-```
-
-Before this works you need to add `http://localhost:8000/auth/twitch/callback` as a second OAuth Redirect URL on your Twitch app at [dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps) — Twitch apps support multiple redirect URLs, so your production one keeps working too.
-
-### 3. Frontend
-
-```
-cd frontend/fwitz_channel_points
-npm install
-npm run dev
-```
-
-By default `npm run dev` points at the live Railway backend (`.env.development`, committed). **To cycle into the local backend instead:**
-
-```
-cp .env.development.local.example .env.development.local
-```
-
-Vite gives `.env.development.local` priority over `.env.development`, and it's gitignored — so switching back to Railway is just deleting that one file. Nothing else changes.
-
-### No Docker? Install MySQL natively instead
-
-Docker Desktop needs virtualization (VT-x/AMD-V) enabled, which some machines — especially locked-down work laptops — won't have and can't turn on without an IT admin. If `docker compose up -d` fails with a virtualization error, skip Docker entirely:
-
-1. Install [MySQL Community Server](https://dev.mysql.com/downloads/installer/) for Windows (the installer also offers MySQL Workbench, useful as a GUI for the next steps — grab it too).
-2. Create the database and user (via Workbench, or the `mysql` CLI it installs):
-   ```sql
-   CREATE DATABASE streamer_social;
-   CREATE USER 'streamer_social'@'localhost' IDENTIFIED BY 'localdev';
-   GRANT ALL PRIVILEGES ON streamer_social.* TO 'streamer_social'@'localhost';
-   FLUSH PRIVILEGES;
-   ```
-3. Load the schema:
-   ```
-   mysql -u streamer_social -p streamer_social < backend\schema.sql
-   ```
-4. In `db.env`, use `DB_PORT=3306` (MySQL's default port) instead of the `3307` used in `db.env.example` — 3307 only exists to dodge a collision with a native MySQL install like this one, which doesn't apply once Docker's out of the picture.
-
-Everything else (backend, frontend, the `.env.development.local` switch) works exactly the same regardless of which of these two you used to get MySQL running.
-
-### Notes
-
-- The EventSub tracker runs as a background thread inside the backend process itself — no separate service to start.
-- Testing redemptions/streaks requires actually going live and redeeming channel points on your own Twitch channel; there's no mock EventSub feed. Since your local backend writes to the local database, this never touches production data.
-- `BACKEND_INTERNAL_URL` in `user_oauth.env.example` is important: without it, the local tracker thread reports events to the *production* backend instead of your local one.
 
 ## API Endpoints
 
