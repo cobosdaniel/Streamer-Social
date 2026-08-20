@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv("user_oauth.env")
+
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +28,6 @@ import os
 import logging
 import secrets
 import time
-from dotenv import load_dotenv
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,8 +37,6 @@ logger = logging.getLogger(__name__)
 import httpx
 from tracker_manager import start_tracker, stop_all_trackers, stop_tracker
 from typing import Optional
-
-load_dotenv("user_oauth.env")
 
 for _var in ("TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_REDIRECT_URI",
              "FRONTEND_BASE_URL", "INTERNAL_API_KEY"):
